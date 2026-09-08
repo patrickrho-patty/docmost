@@ -75,12 +75,13 @@ export class LicenseCheckService {
 
     const features = this.getFeatures(licenseKey);
 
-    // patty fork: unlock the SSO settings surface in the open-source build.
-    // The OIDC implementation lives in core/auth/sso (community port), so the
-    // client's feature gates ('security:settings' nav item, 'sso:custom'
-    // provider management) must resolve to true when no EE licence is present.
+    // patty fork: unlock the SSO + Confluence import surfaces in the
+    // open-source build. The OIDC implementation lives in core/auth/sso
+    // (community port) and Confluence import is fully implemented in
+    // integrations/import — the client's feature gates just need to resolve
+    // to true when no EE licence is present.
     if (features.length === 0 && !licenseKey) {
-      return ['security:settings', 'sso:custom'];
+      return ['security:settings', 'sso:custom', 'import:confluence'];
     }
 
     return features;
