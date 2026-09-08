@@ -73,7 +73,17 @@ export class LicenseCheckService {
       }
     }
 
-    return this.getFeatures(licenseKey);
+    const features = this.getFeatures(licenseKey);
+
+    // patty fork: unlock the SSO settings surface in the open-source build.
+    // The OIDC implementation lives in core/auth/sso (community port), so the
+    // client's feature gates ('security:settings' nav item, 'sso:custom'
+    // provider management) must resolve to true when no EE licence is present.
+    if (features.length === 0 && !licenseKey) {
+      return ['security:settings', 'sso:custom'];
+    }
+
+    return features;
   }
 
   resolveTier(licenseKey: string, plan: string): string {
