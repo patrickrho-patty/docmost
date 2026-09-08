@@ -99,6 +99,16 @@ export class SsoService {
       }
     }
 
+    // allowedGroups lives in the settings JSON column (no schema change)
+    if (dto.allowedGroups !== undefined) {
+      const settings = { ...((provider.settings as Record<string, unknown>) ?? {}) };
+      const groups = (dto.allowedGroups ?? [])
+        .map((g) => g.trim())
+        .filter(Boolean);
+      settings.allowedGroups = groups.length ? groups : null;
+      updates.settings = settings;
+    }
+
     // guard: enabling an OIDC provider requires complete configuration
     if (updates.isEnabled === true && provider.type === AuthProviderType.OIDC) {
       const issuer = (updates.oidcIssuer as string) ?? provider.oidcIssuer;

@@ -16,6 +16,7 @@ import { SkipTransform } from '../../../../common/decorators/skip-transform.deco
 import { OidcService } from './oidc.service';
 import { OidcUserProvisionService } from './oidc-user-provision.service';
 import { SsoService } from '../sso.service';
+import type { AuthProvider } from '@docmost/db/types/entity.types';
 import {
   SSO_TXN_COOKIE,
   SSO_TXN_COOKIE_MAX_AGE,
@@ -145,6 +146,14 @@ export class OidcAuthController {
       return this.redirectToLogin(res, 'idp-login-failed');
     }
 
+    // group-based access control: enforced on every login (new and existing users)
+    if (!this.isGroupAllowed(provider, userInfo.groups)) {
+      this.logger.warn(
+        `OIDC login denied: user is not in any allowed group for provider ${provider.name}`,
+      );
+      return this.redirectToLogin(res, 'group-not-authorized');
+    }
+
     let user;
     try {
       user = await this.provisionService.resolveOrCreateUser(
@@ -196,6 +205,16 @@ export class OidcAuthController {
     if (!redirect) return null;
     if (!redirect.startsWith('/') || redirect.startsWith('//')) return null;
     return redirect;
+  }
+
+  private isGroupAllowed(provider: AuthProvider, claimGroups: string[]): boolean {
+    const settings = provider.settings as Record<string, unknown> | null;
+    const allowedGroups = (settings?.allowedGroups as string[] | null) ?? null;
+    // no allowlist configured -> access is not group-restricted
+    if (!allowedGroups || allowedGroups.length === 0) {
+      return true;
+    }
+    return allowedGroups.some((allowed) => claimGroups.includes(allowed));
   }
 
   private redirectToLogin(res: FastifyReply, reason: string) {

@@ -15,6 +15,7 @@ export interface OidcUserInfo {
   email: string | null;
   name: string | null;
   avatarUrl: string | null;
+  groups: string[];
 }
 
 const DISCOVERY_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -155,6 +156,12 @@ export class OidcService {
       );
     }
 
+    const claimGroups = claims.groups;
+    let groups: string[] = [];
+    if (Array.isArray(claimGroups)) {
+      groups = claimGroups.filter((g): g is string => typeof g === 'string');
+    }
+
     const email =
       typeof claims.email === 'string' ? claims.email.toLowerCase() : null;
     const name =
@@ -171,6 +178,7 @@ export class OidcService {
       email,
       name,
       avatarUrl,
+      groups,
     };
   }
 

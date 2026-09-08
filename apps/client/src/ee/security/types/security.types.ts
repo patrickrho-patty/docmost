@@ -26,4 +26,6 @@ export interface IAuthProvider {
   updatedAt: Date;
   deletedAt: Date;
   providerId: string;
+  settings?: { allowedGroups?: string[] | null } | null;
+  allowedGroups?: string[];
 }

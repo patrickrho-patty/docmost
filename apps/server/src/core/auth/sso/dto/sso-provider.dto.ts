@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  IsArray,
   IsBoolean,
   IsNotEmpty,
   IsOptional,
@@ -53,6 +54,11 @@ export class UpdateSsoProviderDto {
   @IsOptional()
   @IsBoolean()
   groupSync?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  allowedGroups?: string[];
 }
 
 export class SsoProviderIdDto {

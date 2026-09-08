@@ -1,5 +1,7 @@
 import { z } from "zod/v4";
+import { useEffect } from "react";
 import { useForm } from "@mantine/form";
+import { notifications } from "@mantine/notifications";
 import { zod4Resolver } from "mantine-form-zod-resolver";
 import useAuth from "@/features/auth/hooks/use-auth";
 import {
@@ -14,7 +16,7 @@ import {
 } from "@mantine/core";
 import classes from "./auth.module.css";
 import { useRedirectIfAuthenticated } from "@/features/auth/hooks/use-redirect-if-authenticated.ts";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import APP_ROUTE from "@/lib/app-route.ts";
 import { useTranslation } from "react-i18next";
 import SsoLogin from "@/ee/components/sso-login.tsx";
@@ -35,12 +37,33 @@ export function LoginForm() {
   const { t } = useTranslation();
   const { signIn, isLoading } = useAuth();
   useRedirectIfAuthenticated();
+  const [searchParams] = useSearchParams();
   const {
     data,
     isLoading: isDataLoading,
     isError,
     error,
   } = useWorkspacePublicDataQuery();
+
+  useEffect(() => {
+    const ssoError = searchParams.get("error");
+    if (ssoError) {
+      const messages: Record<string, string> = {
+        "group-not-authorized":
+          "Your account is not authorized to access this workspace. Contact an administrator.",
+        "account-not-allowed":
+          "No account exists for your email and signup is disabled for this SSO provider.",
+        "idp-login-failed": "Sign-in with the identity provider failed. Please try again.",
+        "idp-unreachable": "The identity provider could not be reached.",
+        "invalid-state": "Sign-in session expired or invalid. Please try again.",
+        "provider-not-found": "The SSO provider is unavailable.",
+      };
+      notifications.show({
+        message: messages[ssoError] ?? "Sign-in failed. Please try again.",
+        color: "red",
+      });
+    }
+  }, [searchParams]);
 
   const form = useForm<FormValues>({
     validate: zod4Resolver(formSchema),
