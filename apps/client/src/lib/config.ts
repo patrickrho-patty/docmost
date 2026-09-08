@@ -10,7 +10,7 @@ declare global {
 }
 
 export function getAppName(): string {
-  return "Docmost";
+  return "Patty KB";
 }
 
 export function getAppUrl(): string {
