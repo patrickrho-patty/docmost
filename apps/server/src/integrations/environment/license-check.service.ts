@@ -81,7 +81,10 @@ export class LicenseCheckService {
     // integrations/import — the client's feature gates just need to resolve
     // to true when no EE licence is present.
     if (features.length === 0 && !licenseKey) {
-      return ['security:settings', 'sso:custom', 'import:confluence'];
+      // PAT-2332: 'ai' unlocks semantic search / AI answers / AI chat
+      // surfaces. Generative-AI (/api/ai/generate) and MCP stay hidden
+      // client-side — no server implementation in this fork.
+      return ['security:settings', 'sso:custom', 'import:confluence', 'ai'];
     }
 
     return features;

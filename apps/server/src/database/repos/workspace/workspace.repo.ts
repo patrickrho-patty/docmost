@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectKysely } from 'nestjs-kysely';
 import { KyselyDB, KyselyTransaction } from '../../types/kysely.types';
 import { dbOrTx } from '../../utils';
+import { getAiSettings } from '../../../common/helpers/ai-settings';
 import {
   InsertableWorkspace,
   UpdatableWorkspace,
@@ -189,6 +190,15 @@ export class WorkspaceRepo {
       .where('id', '=', workspaceId)
       .returning(this.baseFields)
       .executeTakeFirst();
+  }
+
+  async isAiSearchEnabled(workspaceId: string): Promise<boolean> {
+    const ws = await this.db
+      .selectFrom('workspaces')
+      .select(['settings'])
+      .where('id', '=', workspaceId)
+      .executeTakeFirst();
+    return getAiSettings(ws ?? {}).search === true;
   }
 
   async updateAiSettings(

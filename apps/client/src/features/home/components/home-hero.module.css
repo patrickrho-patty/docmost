@@ -1,0 +1,98 @@
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding-top: 6vh;
+}
+
+.wordmark {
+  font-size: rem(44px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  color: light-dark(var(--mantine-color-gray-9), var(--mantine-color-gray-0));
+
+  @media (max-width: $mantine-breakpoint-sm) {
+    font-size: rem(32px);
+  }
+}
+
+.tagline {
+  margin-top: rem(8px);
+  font-size: var(--mantine-font-size-md);
+  color: light-dark(var(--mantine-color-gray-6), var(--mantine-color-dimmed));
+}
+
+.omnibox {
+  width: 100%;
+  max-width: 640px;
+  margin-top: rem(28px);
+}
+
+.input {
+  width: 100%;
+  margin-top: rem(16px);
+
+  input {
+    height: rem(54px);
+    font-size: rem(17px);
+    border-radius: rem(27px);
+    padding-left: rem(22px);
+    padding-right: rem(22px);
+    border: 1px solid
+      light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-4));
+    background: light-dark(var(--mantine-color-white), var(--mantine-color-dark-6));
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.08);
+    transition: box-shadow 150ms ease;
+
+    &:focus,
+    &:focus-within {
+      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.14);
+      border-color: light-dark(
+        var(--mantine-color-blue-4),
+        var(--mantine-color-blue-6)
+      );
+    }
+  }
+}
+
+.results {
+  width: 100%;
+  max-width: 640px;
+  margin-top: rem(12px);
+  text-align: left;
+  border: 1px solid
+    light-dark(var(--mantine-color-gray-3), var(--mantine-color-dark-4));
+  border-radius: var(--mantine-radius-lg);
+  background: light-dark(var(--mantine-color-white), var(--mantine-color-dark-6));
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.resultItem {
+  display: flex;
+  align-items: flex-start;
+  gap: rem(10px);
+  padding: rem(10px) rem(16px);
+  color: inherit;
+  text-decoration: none;
+
+  &:hover {
+    background: light-dark(
+      var(--mantine-color-gray-0),
+      var(--mantine-color-dark-5)
+    );
+  }
+}
+
+.answer {
+  width: 100%;
+  max-width: 640px;
+  margin-top: rem(16px);
+  text-align: left;
+}
+
+.continueChat {
+  margin-top: rem(12px);
+}

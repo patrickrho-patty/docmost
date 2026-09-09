@@ -93,14 +93,13 @@ export function AppHeader() {
                 height={22}
               />
             </Box>
-            <Text
-              size="lg"
-              fw={600}
-              style={{ userSelect: "none" }}
-              visibleFrom="sm"
-            >
-              Patty KB
-            </Text>
+            <Box visibleFrom="sm" className={classes.brandLogoWrap}>
+              <img
+                src="/logos/patty_kb_text_logo.png"
+                alt="Patty KB"
+                className={classes.brandLogo}
+              />
+            </Box>
           </Link>
 
           <Group ml={50} gap={5} className={classes.links} visibleFrom="sm">

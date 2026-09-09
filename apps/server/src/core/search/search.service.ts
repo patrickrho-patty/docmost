@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { SearchDTO, SearchSuggestionDTO } from './dto/search.dto';
 import { SearchResponseDto } from './dto/search-response.dto';
 import { InjectKysely } from 'nestjs-kysely';
@@ -8,19 +9,48 @@ import { PageRepo } from '@docmost/db/repos/page/page.repo';
 import { SpaceMemberRepo } from '@docmost/db/repos/space/space-member.repo';
 import { ShareRepo } from '@docmost/db/repos/share/share.repo';
 import { PagePermissionRepo } from '@docmost/db/repos/page/page-permission.repo';
+import { WorkspaceRepo } from '@docmost/db/repos/workspace/workspace.repo';
+import {
+  containsCjk,
+  escapeLike,
+  buildSnippetHighlight,
+} from '../../common/helpers';
+import type { VectorHit, VectorSearchService } from '../../ee/ai/vector-search.service';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const tsquery = require('pg-tsquery')();
 
+const RRF_K = 60;
+
 @Injectable()
 export class SearchService {
+  private readonly logger = new Logger(SearchService.name);
+  // patty fork: soft-loaded EE vector search (license-check pattern)
+  private vectorSearchService?: VectorSearchService | null;
+
   constructor(
     @InjectKysely() private readonly db: KyselyDB,
     private pageRepo: PageRepo,
     private shareRepo: ShareRepo,
     private spaceMemberRepo: SpaceMemberRepo,
     private pagePermissionRepo: PagePermissionRepo,
+    private workspaceRepo: WorkspaceRepo,
+    private moduleRef: ModuleRef,
   ) {}
+
+  private getVectorSearchService(): VectorSearchService | null {
+    if (this.vectorSearchService !== undefined) return this.vectorSearchService;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const mod = require('../../ee/ai/vector-search.service');
+      this.vectorSearchService = this.moduleRef.get(mod.VectorSearchService, {
+        strict: false,
+      });
+    } catch {
+      this.vectorSearchService = null;
+    }
+    return this.vectorSearchService;
+  }
 
   async searchPage(
     searchParams: SearchDTO,
@@ -28,6 +58,8 @@ export class SearchService {
       userId?: string;
       workspaceId: string;
       publicPageIds?: string[];
+      /** caller-resolved settings.ai.search (avoids a repeat DB lookup) */
+      aiSearchEnabled?: boolean;
     },
   ): Promise<{ items: SearchResponseDto[] }> {
     const query = searchParams.query?.trim() ?? '';
@@ -44,7 +76,53 @@ export class SearchService {
     const titleOnly = searchParams.titleOnly === true;
     const titleQuery = query;
     // escape LIKE wildcards; ranking keeps the raw query
-    const titleLikeQuery = query.replace(/[\\%_]/g, '\\$&');
+    const titleLikeQuery = escapeLike(query);
+    // patty fork (PAT-2331): the stock 'english' FTS cannot segment CJK —
+    // Korean/Japanese/Chinese queries route through a trigram/ILIKE path.
+    const useCjkPath = !browseByFilters && containsCjk(query);
+
+    const limit = searchParams.limit || 25;
+    const offset = searchParams.offset || 0;
+
+    // patty fork (PAT-2331): hybrid semantic merge eligibility. When active,
+    // the lexical query fetches offset+limit rows from position 0 and the
+    // RRF merge slices once — slicing a pre-offset window would drop the top
+    // merged results.
+    const vectorService =
+      !browseByFilters &&
+      !titleOnly &&
+      opts.userId &&
+      !searchParams.shareId &&
+      !opts.publicPageIds
+        ? this.getVectorSearchService()
+        : null;
+    const aiSearchEnabled =
+      vectorService != null &&
+      (opts.aiSearchEnabled ??
+        (await this.workspaceRepo.isAiSearchEnabled(opts.workspaceId)));
+    const hybridActive = vectorService != null && aiSearchEnabled;
+
+    // Embedding (~350ms warm) runs concurrently with the lexical query.
+    // Vector failures must never take down lexical search.
+    const vectorPromise: Promise<VectorHit[]> = hybridActive
+      ? (async () => {
+          const userSpaceIds = searchParams.spaceId
+            ? [searchParams.spaceId]
+            : await this.spaceMemberRepo.getUserSpaceIds(opts.userId);
+          return vectorService.search({
+            query,
+            workspaceId: opts.workspaceId,
+            userSpaceIds,
+            spaceId: searchParams.spaceId,
+            limit: limit + offset,
+          });
+        })().catch((err) => {
+          this.logger.warn(
+            `Vector search failed, falling back to lexical: ${err?.message ?? err}`,
+          );
+          return [];
+        })
+      : Promise.resolve([]);
 
     const rankColumn = browseByFilters
       ? sql<number>`0`.as('rank')
@@ -52,10 +130,17 @@ export class SearchService {
         ? sql<number>`word_similarity(lower(${titleQuery}), lower(pages.title))`.as(
             'rank',
           )
-        : sql<number>`ts_rank(tsv, to_tsquery('english', f_unaccent(${searchQuery})))`.as(
-            'rank',
-          );
-    const highlightColumn = browseByFilters || titleOnly
+        : useCjkPath
+          ? sql<number>`(word_similarity(lower(${titleQuery}), lower(pages.title)) * 3 + CASE WHEN pages.text_content ILIKE ${`%${titleLikeQuery}%`} THEN 1 ELSE 0 END)`.as(
+              'rank',
+            )
+          : sql<number>`ts_rank(tsv, to_tsquery('english', f_unaccent(${searchQuery})))`.as(
+              'rank',
+            );
+    // CJK highlights are built in JS from textContent (ts_headline cannot
+    // match CJK against the 'english' FTS config)
+    const highlightColumn =
+      browseByFilters || titleOnly || useCjkPath
       ? sql<string>`''`.as('highlight')
       : sql<string>`ts_headline('english', text_content, to_tsquery('english', f_unaccent(${searchQuery})),'MinWords=9, MaxWords=10, MaxFragments=3')`.as(
           'highlight',
@@ -75,20 +160,29 @@ export class SearchService {
         rankColumn,
         highlightColumn,
       ])
-      .$if(!browseByFilters && !titleOnly, (qb) =>
+      // body text is needed for JS-side CJK highlights
+      .$if(useCjkPath, (qb) => qb.select('textContent'))
+      .$if(!browseByFilters && !titleOnly && !useCjkPath, (qb) =>
         qb.where(
           'tsv',
           '@@',
           sql<string>`to_tsquery('english', f_unaccent(${searchQuery}))`,
         ),
       )
+      .$if(!browseByFilters && !titleOnly && useCjkPath, (qb) =>
+        qb.where((eb) =>
+          eb.or([
+            // ILIKE keeps the pg_trgm GIN indexes usable (the stock title
+            // index is on lower(title); a bare-column title index ships with
+            // the text_content one).
+            eb('pages.title', 'ilike', `%${titleLikeQuery}%`),
+            eb('pages.textContent', 'ilike', `%${titleLikeQuery}%`),
+          ]),
+        ),
+      )
       .$if(!browseByFilters && titleOnly, (qb) =>
         qb.where((eb) =>
-          eb(
-            sql`lower(pages.title)`,
-            'like',
-            sql`lower(${`%${titleLikeQuery}%`})`,
-          ),
+          eb('pages.title', 'ilike', `%${titleLikeQuery}%`),
         ),
       )
       .$if(Boolean(searchParams.creatorId), (qb) =>
@@ -107,8 +201,8 @@ export class SearchService {
       .where('deletedAt', 'is', null)
       .$if(browseByFilters, (qb) => qb.orderBy('updatedAt', 'desc'))
       .$if(!browseByFilters, (qb) => qb.orderBy('rank', 'desc'))
-      .limit(searchParams.limit || 25)
-      .offset(searchParams.offset || 0);
+      .limit(hybridActive ? limit + offset : limit)
+      .offset(hybridActive ? 0 : offset);
 
     if (!searchParams.shareId && !opts.publicPageIds) {
       queryResults = queryResults.select((eb) => this.pageRepo.withSpace(eb));
@@ -176,6 +270,59 @@ export class SearchService {
     //@ts-ignore
     let results: any[] = await queryResults.execute();
 
+    // patty fork (PAT-2331): hybrid semantic merge (RRF) for authenticated
+    // member search with AI search enabled.
+    const vectorHits = await vectorPromise;
+    if (hybridActive && vectorHits.length > 0) {
+      const scores = new Map<string, number>();
+      results.forEach((r, i) =>
+        scores.set(r.id, (scores.get(r.id) ?? 0) + 1 / (RRF_K + i + 1)),
+      );
+      vectorHits.forEach((h, i) =>
+        scores.set(h.pageId, (scores.get(h.pageId) ?? 0) + 1 / (RRF_K + i + 1)),
+      );
+
+      const lexicalIds = new Set(results.map((r) => r.id));
+      const vectorOnlyIds = vectorHits
+        .filter((h) => !lexicalIds.has(h.pageId))
+        .map((h) => h.pageId);
+
+      if (vectorOnlyIds.length > 0) {
+        const excerptById = new Map(
+          vectorHits.map((h) => [h.pageId, h.excerpt]),
+        );
+        const vectorOnlyRows = await this.db
+          .selectFrom('pages')
+          .select([
+            'id',
+            'slugId',
+            'title',
+            'icon',
+            'parentPageId',
+            'creatorId',
+            'createdAt',
+            'updatedAt',
+          ])
+          .select((eb) => this.pageRepo.withSpace(eb))
+          .where('id', 'in', vectorOnlyIds)
+          .where('deletedAt', 'is', null)
+          .execute();
+
+        for (const row of vectorOnlyRows) {
+          results.push({
+            ...row,
+            rank: 0,
+            highlight: buildSnippetHighlight(
+              excerptById.get(row.id) ?? '',
+              query,
+            ),
+          });
+        }
+      }
+
+      results.sort((a, b) => (scores.get(b.id) ?? 0) - (scores.get(a.id) ?? 0));
+    }
+
     // Filter results by page-level permissions (if user is authenticated)
     if (opts.userId && results.length > 0) {
       const pageIds = results.map((r: any) => r.id);
@@ -189,9 +336,22 @@ export class SearchService {
       results = results.filter((r: any) => accessibleSet.has(r.id));
     }
 
+    if (hybridActive) {
+      // single slice AFTER merge + permission filter
+      results = results.slice(offset, offset + limit);
+    }
+
     //@ts-ignore
     const searchResults = results.map((result: SearchResponseDto) => {
       result.wholeWord = true
+      // patty fork (PAT-2331): JS-side highlight for CJK queries
+      if (useCjkPath && !result.highlight && (result as any).textContent) {
+        result.highlight = buildSnippetHighlight(
+          (result as any).textContent,
+          query,
+        );
+      }
+      delete (result as any).textContent;
       if (!result.highlight) {
         result.matchedText = [];
         return result;

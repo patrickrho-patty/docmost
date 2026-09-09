@@ -1,4 +1,5 @@
 import api from "@/lib/api-client.ts";
+import { streamSseFrames } from "@/lib/stream-sse.ts";
 import type {
   AiChat,
   AiChatMessage,
@@ -48,10 +49,12 @@ export async function uploadChatFile(
   chatId?: string,
 ): Promise<ChatAttachment> {
   const formData = new FormData();
-  formData.append("file", file);
+  // fields must be appended BEFORE the file part: @fastify/multipart only
+  // surfaces fields parsed before the file on `file.fields`
   if (chatId) {
     formData.append("chatId", chatId);
   }
+  formData.append("file", file);
   return await api.post("/ai/chats/upload", formData, {
     headers: { "Content-Type": "multipart/form-data" },
   });
@@ -71,74 +74,23 @@ export function sendChatMessage(
 ): AbortController {
   const abortController = new AbortController();
 
-  (async () => {
-    try {
-      const response = await fetch("/api/ai/chats/send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(params),
-        signal: abortController.signal,
-        credentials: "include",
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text();
-        let errorMessage = `HTTP error ${response.status}`;
-        try {
-          const parsed = JSON.parse(errorBody);
-          errorMessage = parsed.message || errorMessage;
-        } catch {
-          // use default
-        }
-        onError?.(errorMessage);
+  streamSseFrames<AiChatStreamEvent & { message?: string }>({
+    url: "/api/ai/chats/send",
+    body: params,
+    signal: abortController.signal,
+    onFrame: (parsed) => {
+      if (parsed.type === "error") {
+        onError?.(parsed.message || "Unknown error");
         return;
       }
-
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-
-      if (!reader) {
-        onError?.("Response body is not readable");
-        return;
-      }
-
-      let buffer = "";
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || "";
-
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              const data = line.slice(6);
-              if (data === "[DONE]") {
-                onComplete?.();
-                return;
-              }
-              try {
-                const parsed = JSON.parse(data) as AiChatStreamEvent;
-                onEvent(parsed);
-              } catch {
-                // Skip invalid JSON
-              }
-            }
-          }
-        }
-      } finally {
-        reader.releaseLock();
-      }
-
-      onComplete?.();
-    } catch (error: any) {
-      if (error.name !== "AbortError") {
-        onError?.(error.message);
-      }
+      onEvent(parsed);
+    },
+    onDone: onComplete,
+  }).catch((error) => {
+    if (error.name !== "AbortError") {
+      onError?.(error.message);
     }
-  })();
+  });
 
   return abortController;
 }

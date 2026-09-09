@@ -47,3 +47,10 @@ export type ChatAttachment = {
   fileSize: number;
   mimeType: string;
 };
+
+/** Navigation state for /ai deep-links carrying a pre-filled prompt. */
+export type AiChatInitialState = {
+  initialContent: string;
+  initialMentions: PageMention[];
+  initialAttachments: ChatAttachment[];
+};

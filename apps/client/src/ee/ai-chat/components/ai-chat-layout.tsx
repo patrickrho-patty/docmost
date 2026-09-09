@@ -5,7 +5,7 @@ import { useChatStream } from "../hooks/use-chat-stream";
 import ChatMessageList from "./chat-message-list";
 import ChatEmptyState from "./chat-empty-state";
 import ChatInput from "./chat-input";
-import type { HomeAiPromptInitialState } from "@/features/home/components/home-ai-prompt";
+import type { AiChatInitialState } from "../types/ai-chat.types";
 import classes from "../styles/ai-chat.module.css";
 
 export default function AiChatLayout() {
@@ -43,7 +43,7 @@ export default function AiChatLayout() {
 
   useEffect(() => {
     if (autoSentRef.current || chatId) return;
-    const state = location.state as HomeAiPromptInitialState | null;
+    const state = location.state as AiChatInitialState | null;
     if (!state?.initialContent && !state?.initialAttachments?.length) return;
 
     autoSentRef.current = true;

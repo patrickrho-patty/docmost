@@ -682,6 +682,8 @@ export class WorkspaceService {
     });
 
     if (after.aiSearch === true) {
+      // cancel any pending disable-time delete before backfilling
+      await this.aiQueue.remove(`ai-search-disabled-${workspaceId}`);
       await this.aiQueue.add(QueueJob.WORKSPACE_CREATE_EMBEDDINGS, {
         workspaceId,
       });

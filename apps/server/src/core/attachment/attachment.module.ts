@@ -11,5 +11,7 @@ import { TokenModule } from '../auth/token.module';
   imports: [StorageModule, UserModule, WorkspaceModule, TokenModule],
   controllers: [AttachmentController],
   providers: [AttachmentService, AttachmentProcessor],
+  // patty fork: ee/ai-chat reuses the upload pipeline for chat attachments
+  exports: [AttachmentService],
 })
 export class AttachmentModule {}
