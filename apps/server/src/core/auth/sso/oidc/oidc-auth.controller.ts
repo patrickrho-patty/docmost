@@ -208,7 +208,6 @@ export class OidcAuthController {
    * Public discovery for CLI clients (patty-kb-mcp): the workspace's enabled
    * OIDC provider, without exposing client secrets.
    */
-  @SkipTransform()
   @Get('config')
   async config(@Req() req: FastifyRequest) {
     const workspaceId = (req.raw as any).workspaceId as string | null;
