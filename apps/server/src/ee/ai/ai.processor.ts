@@ -51,6 +51,17 @@ export class AiQueueProcessor extends WorkerHost implements OnModuleDestroy {
           break;
         }
 
+        case QueueJob.PAGE_MOVED_TO_SPACE: {
+          const { pageIds, spaceId } = job.data as IPageEmbeddingJob & {
+            spaceId: string;
+          };
+          await this.pageEmbeddingService.updateSpaceForPages(
+            pageIds,
+            spaceId,
+          );
+          break;
+        }
+
         case QueueJob.WORKSPACE_DELETE_EMBEDDINGS: {
           const { workspaceId } = job.data as IWorkspaceEmbeddingJob;
           await this.pageEmbeddingService.deleteByWorkspaceId(workspaceId);

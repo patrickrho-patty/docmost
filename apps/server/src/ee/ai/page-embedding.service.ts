@@ -171,6 +171,22 @@ export class PageEmbeddingService {
       .execute();
   }
 
+  /**
+   * Keep the denormalized space_id in sync when pages move spaces —
+   * page_embeddings.space_id cascades on space delete, so stale values
+   * mean a later space deletion wipes embeddings of moved pages.
+   */
+  async updateSpaceForPages(pageIds: string[], spaceId: string): Promise<void> {
+    if (!pageIds?.length) return;
+    const ids = await this.resolvePageIds(pageIds);
+    if (ids.length === 0) return;
+    await this.db
+      .updateTable('pageEmbeddings')
+      .set({ spaceId })
+      .where('pageId', 'in', ids)
+      .execute();
+  }
+
   async deleteByWorkspaceId(workspaceId: string): Promise<void> {
     // disable-time deletes are scheduled with a 24h delay; if AI search was
     // re-enabled in the meantime, the job must not wipe live embeddings
