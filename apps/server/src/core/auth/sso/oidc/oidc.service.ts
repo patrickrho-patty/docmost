@@ -149,6 +149,40 @@ export class OidcService {
       }
     }
 
+    return this.mapClaimsToUserInfo(claims);
+  }
+
+  /**
+   * Validates a raw IdP access token against the userinfo endpoint and maps
+   * its claims. Used by the MCP token-exchange endpoint; the IdP responding
+   * with claims is what proves the token is genuine and unexpired.
+   */
+  async getUserInfoFromAccessToken(
+    issuer: string,
+    clientId: string,
+    clientSecret: string,
+    accessToken: string,
+  ): Promise<OidcUserInfo> {
+    let config: oidcClient.Configuration;
+    try {
+      config = await this.discover(issuer, clientId, clientSecret);
+    } catch (err) {
+      this.logger.error(
+        `OIDC discovery failed for issuer ${issuer}: ${(err as Error).message}`,
+      );
+      throw new UnauthorizedException('Failed to contact the identity provider');
+    }
+
+    const claims = (await oidcClient.fetchUserInfo(
+      config,
+      accessToken,
+      oidcClient.skipSubjectCheck,
+    )) as OidcClaims;
+
+    return this.mapClaimsToUserInfo(claims);
+  }
+
+  private mapClaimsToUserInfo(claims: OidcClaims): OidcUserInfo {
     const sub = claims.sub;
     if (typeof sub !== 'string' || !sub) {
       throw new UnauthorizedException(

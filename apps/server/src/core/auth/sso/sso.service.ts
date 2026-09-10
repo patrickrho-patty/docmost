@@ -54,6 +54,22 @@ export class SsoService {
       .executeTakeFirst();
   }
 
+  async getEnabledOidcProvider(
+    workspaceId: string,
+    trx?: KyselyTransaction,
+  ): Promise<AuthProvider | undefined> {
+    const db = trx ?? this.db;
+    return db
+      .selectFrom('authProviders')
+      .selectAll()
+      .where('workspaceId', '=', workspaceId)
+      .where('type', '=', AuthProviderType.OIDC)
+      .where('isEnabled', '=', true)
+      .where('deletedAt', 'is', null)
+      .orderBy('createdAt', 'asc')
+      .executeTakeFirst();
+  }
+
   async createProvider(
     creatorId: string,
     workspaceId: string,
