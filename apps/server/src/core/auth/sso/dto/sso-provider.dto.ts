@@ -59,6 +59,11 @@ export class UpdateSsoProviderDto {
   @IsArray()
   @IsString({ each: true })
   allowedGroups?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  exchangeClientIds?: string[];
 }
 
 export class SsoProviderIdDto {

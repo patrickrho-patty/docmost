@@ -1,4 +1,9 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import * as oidcClient from 'openid-client';
 import { randomUUID } from 'node:crypto';
 import { URL } from 'node:url';
@@ -16,6 +21,7 @@ export interface OidcUserInfo {
   name: string | null;
   avatarUrl: string | null;
   groups: string[];
+  emailVerified: boolean | null;
 }
 
 const DISCOVERY_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -117,7 +123,7 @@ export class OidcService {
       this.logger.error(
         `OIDC discovery failed for issuer ${issuer}: ${(err as Error).message}`,
       );
-      throw new UnauthorizedException('Failed to contact the identity provider');
+      throw new ServiceUnavailableException('Failed to contact the identity provider');
     }
 
     const tokens = await oidcClient.authorizationCodeGrant(
@@ -170,7 +176,7 @@ export class OidcService {
       this.logger.error(
         `OIDC discovery failed for issuer ${issuer}: ${(err as Error).message}`,
       );
-      throw new UnauthorizedException('Failed to contact the identity provider');
+      throw new ServiceUnavailableException('Failed to contact the identity provider');
     }
 
     const claims = (await oidcClient.fetchUserInfo(
@@ -206,6 +212,8 @@ export class OidcService {
       null;
     const avatarUrl =
       typeof claims.picture === 'string' ? claims.picture : null;
+    const emailVerified =
+      typeof claims.email_verified === 'boolean' ? claims.email_verified : null;
 
     return {
       providerUserId: sub,
@@ -213,6 +221,7 @@ export class OidcService {
       name,
       avatarUrl,
       groups,
+      emailVerified,
     };
   }
 

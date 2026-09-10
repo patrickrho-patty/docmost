@@ -9,7 +9,7 @@ import {
 export class OidcExchangeDto {
   @IsNotEmpty()
   @IsString()
-  @MaxLength(8192)
+  @MaxLength(32768)
   accessToken: string;
 
   @IsOptional()

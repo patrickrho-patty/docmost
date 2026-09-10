@@ -52,6 +52,20 @@ interface OidcTxn {
   redirect: string | null;
 }
 
+function readTokenClient(token: string): string | undefined {
+  try {
+    const payload = JSON.parse(
+      Buffer.from(token.split('.')[1] ?? '', 'base64url').toString('utf8'),
+    ) as { azp?: string; aud?: string | string[] };
+    if (typeof payload.azp === 'string') {
+      return payload.azp;
+    }
+    return Array.isArray(payload.aud) ? payload.aud[0] : payload.aud;
+  } catch {
+    return undefined;
+  }
+}
+
 @Public()
 @Controller('sso/oidc')
 export class OidcAuthController {
@@ -191,6 +205,13 @@ export class OidcAuthController {
 
     const authToken = await this.sessionService.createSessionAndToken(user);
 
+    this.auditService.log({
+      event: AuditEvent.USER_LOGIN,
+      resourceType: AuditResource.USER,
+      resourceId: user.id,
+      metadata: { source: 'sso', method: 'oidc_callback' },
+    });
+
     res.clearCookie(SSO_TXN_COOKIE, { path: '/' });
     res.setCookie('authToken', authToken, {
       httpOnly: true,
@@ -208,6 +229,8 @@ export class OidcAuthController {
    * Public discovery for CLI clients (patty-kb-mcp): the workspace's enabled
    * OIDC provider, without exposing client secrets.
    */
+  @SkipThrottle({ ...ALL_NAMED_THROTTLERS_SKIPPED, [AUTH_THROTTLER]: false })
+  @UseGuards(ThrottlerGuard)
   @Get('config')
   async config(@Req() req: FastifyRequest) {
     const workspaceId = (req.raw as any).workspaceId as string | null;
@@ -250,6 +273,15 @@ export class OidcAuthController {
       throw new UnauthorizedException('OIDC provider not found');
     }
 
+    const allowedClientIds = this.exchangeClientIds(provider);
+    if (
+      allowedClientIds.length > 0 &&
+      !allowedClientIds.includes(readTokenClient(dto.accessToken) ?? '')
+    ) {
+      this.logger.warn('OIDC exchange denied: token client is not allowed');
+      throw new UnauthorizedException('Identity token client is not allowed');
+    }
+
     let userInfo: OidcUserInfo;
     try {
       userInfo = await this.oidcService.getUserInfoFromAccessToken(
@@ -262,6 +294,9 @@ export class OidcAuthController {
       this.logger.warn(
         `OIDC token exchange rejected: ${(err as Error).message}`,
       );
+      if (err instanceof HttpException && err.getStatus() >= 500) {
+        throw err;
+      }
       throw new UnauthorizedException('Invalid or expired identity token');
     }
 
@@ -301,6 +336,14 @@ export class OidcAuthController {
       authToken,
       user: { id: user.id, name: user.name, email: user.email },
     };
+  }
+
+  private exchangeClientIds(provider: AuthProvider): string[] {
+    const settings = provider.settings as Record<string, unknown> | null;
+    const ids = settings?.exchangeClientIds;
+    return Array.isArray(ids)
+      ? ids.filter((id): id is string => typeof id === 'string')
+      : [];
   }
 
   private readTxnCookie(req: FastifyRequest): OidcTxn | null {

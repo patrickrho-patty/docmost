@@ -9,10 +9,14 @@ import {
 } from './dto/sso-provider.dto';
 import { AuthProvider } from '@docmost/db/types/entity.types';
 import { AuthProviderType } from './sso.constants';
+import { OidcService } from './oidc/oidc.service';
 
 @Injectable()
 export class SsoService {
-  constructor(@InjectKysely() private readonly db: KyselyDB) {}
+  constructor(
+    @InjectKysely() private readonly db: KyselyDB,
+    private readonly oidcService: OidcService,
+  ) {}
 
   async getProviders(
     workspaceId: string,
@@ -67,6 +71,7 @@ export class SsoService {
       .where('isEnabled', '=', true)
       .where('deletedAt', 'is', null)
       .orderBy('createdAt', 'asc')
+      .orderBy('id', 'asc')
       .executeTakeFirst();
   }
 
@@ -115,13 +120,26 @@ export class SsoService {
       }
     }
 
-    // allowedGroups lives in the settings JSON column (no schema change)
+    // allowedGroups and exchangeClientIds live in the settings JSON column (no schema change)
+    const settings = {
+      ...((provider.settings as Record<string, unknown>) ?? {}),
+    };
+    let settingsChanged = false;
     if (dto.allowedGroups !== undefined) {
-      const settings = { ...((provider.settings as Record<string, unknown>) ?? {}) };
       const groups = (dto.allowedGroups ?? [])
         .map((g) => g.trim())
         .filter(Boolean);
       settings.allowedGroups = groups.length ? groups : null;
+      settingsChanged = true;
+    }
+    if (dto.exchangeClientIds !== undefined) {
+      const clientIds = (dto.exchangeClientIds ?? [])
+        .map((id) => id.trim())
+        .filter(Boolean);
+      settings.exchangeClientIds = clientIds.length ? clientIds : null;
+      settingsChanged = true;
+    }
+    if (settingsChanged) {
       updates.settings = settings;
     }
 
@@ -139,13 +157,23 @@ export class SsoService {
       }
     }
 
-    return this.db
+    const updated = await this.db
       .updateTable('authProviders')
       .set(updates)
       .where('id', '=', dto.providerId)
       .where('workspaceId', '=', workspaceId)
       .returningAll()
       .executeTakeFirst();
+
+    // issuer/secret edits change discovery and JWKS material; drop the cache
+    if (provider.oidcIssuer) {
+      this.oidcService.invalidateDiscovery(provider.oidcIssuer);
+    }
+    if (dto.oidcIssuer && dto.oidcIssuer !== provider.oidcIssuer) {
+      this.oidcService.invalidateDiscovery(dto.oidcIssuer);
+    }
+
+    return updated;
   }
 
   async deleteProvider(providerId: string, workspaceId: string): Promise<void> {

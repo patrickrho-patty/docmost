@@ -57,6 +57,12 @@ export class OidcUserProvisionService {
       );
     }
 
+    if (userInfo.emailVerified === false) {
+      throw new ForbiddenException(
+        'The identity provider reports this email address as unverified',
+      );
+    }
+
     const existingUser = await this.userRepo.findByEmail(
       userInfo.email,
       workspaceId,
