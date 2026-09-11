@@ -143,13 +143,15 @@ export function usePageTranslate(pageId: string | undefined) {
   useEffect(() => {
     const root = findContentRoot();
     if (!root || typeof MutationObserver === "undefined") return;
-    const observer = new MutationObserver(() => {
+    const hideIfEditable = () => {
       if (root.getAttribute("contenteditable") === "true") {
         abortRef.current?.abort();
         restore();
         setState("hidden");
       }
-    });
+    };
+    hideIfEditable(); // page may LOAD directly into edit mode — hide at attach
+    const observer = new MutationObserver(hideIfEditable);
     observer.observe(root, { attributes: true, attributeFilter: ["contenteditable"] });
     return () => observer.disconnect();
   }, [pageId, restore, state]);
@@ -158,6 +160,12 @@ export function usePageTranslate(pageId: string | undefined) {
     if (!pageId) return;
     const root = findContentRoot();
     if (!root) return;
+    // never translate the live collaborative editor — DOM swaps there would
+    // be picked up by yjs as local edits and persisted for everyone
+    if (root.getAttribute("contenteditable") === "true") {
+      setState("hidden");
+      return;
+    }
 
     const blocks = collectBlocks(root);
     if (blocks.length === 0) return;
