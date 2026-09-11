@@ -1,0 +1,49 @@
+# ONE Stage. The KB is an internal system: it ships straight to production,
+# no forge staging stage, no Argo CD (compose host, not k8s — the box converges
+# itself; see deploy/README.md).
+#
+# Pinning uses `yaml-update` (NOT kustomize-set-image — a compose file is not a
+# kustomize overlay): the digest is written into services.docmost.image.
+#
+# v1.11 step schema: `as: push` on git-push and `config.message` on git-commit
+# are both required. The commit carries [skip ci] + deploy/** is paths-ignored
+# in the build workflow — belt and suspenders.
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: production
+  namespace: patty-kb
+spec:
+  requestedFreight:
+    - origin:
+        kind: Warehouse
+        name: patty-kb
+      sources:
+        direct: true
+  promotionTemplate:
+    spec:
+      steps:
+        - uses: git-clone
+          as: clone
+          config:
+            repoURL: https://github.com/patrickrho-patty/docmost.git
+            checkout:
+              - branch: custom
+                path: ./out
+        - uses: yaml-update
+          as: update-image
+          config:
+            path: ./out/deploy/production/docker-compose.yml
+            updates:
+              - path: services.docmost.image
+                value: registry.patty.io/patty-kb/docmost@${{ imageFrom('registry.patty.io/patty-kb/docmost').Digest }}
+        - uses: git-commit
+          as: commit
+          config:
+            path: ./out
+            message: "chore(deploy): promote production kb image [skip ci]"
+        - uses: git-push
+          as: push
+          config:
+            path: ./out
+            targetBranch: custom

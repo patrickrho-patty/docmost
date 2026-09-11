@@ -1,0 +1,52 @@
+# Builds the Patty KB (docmost) image and pushes it to Harbor — the GitOps
+# pipeline's build step for an INTERNAL service: build → Harbor → Kargo
+# promotion pins the digest into deploy/production/docker-compose.yml → the
+# box converges (see deploy/README.md). No staging stage, no Argo CD.
+#
+# Loop guard: `deploy/**` is in paths-ignore — Kargo's promotion commits must
+# never re-trigger a build.
+name: kb-image
+
+on:
+  push:
+    branches: [custom]
+    paths-ignore:
+      - "deploy/**"
+      - "docs/**"
+      - "**.md"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kb-image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: [self-hosted, linux, x64, garm]
+    # docmost's build is heavy (nx + pnpm + full client bundle) — generous cap.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: registry.patty.io
+          username: ${{ secrets.REGISTRY_USER }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      # `target: installer` is the runtime stage (last stage) — explicit per
+      # the platform rule; never rely on the implicit last-stage default.
+      - uses: docker/build-push-action@v6
+        id: build
+        with:
+          context: .
+          target: installer
+          push: true
+          tags: registry.patty.io/patty-kb/docmost:sha-${{ github.sha }}
+
+      - name: Report digest
+        run: |
+          echo "digest: ${{ steps.build.outputs.digest }}"
