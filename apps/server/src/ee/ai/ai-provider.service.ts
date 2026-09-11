@@ -38,6 +38,9 @@ export class AiProviderService {
     model: ChatModelKind;
     temperature?: number;
     signal?: AbortSignal;
+    /** e.g. 'none' — skips the reasoning phase for latency-critical calls
+     *  (translation). Only sent when explicitly set. */
+    reasoningEffort?: string;
   }): Promise<Response> {
     const env = this.environmentService;
     const apiKey = env.getOpenAiApiKey();
@@ -58,6 +61,7 @@ export class AiProviderService {
           stream: true,
           temperature: opts.temperature ?? 0.2,
           messages: opts.messages,
+          ...(opts.reasoningEffort ? { reasoning_effort: opts.reasoningEffort } : {}),
         }),
       });
     } catch (err) {

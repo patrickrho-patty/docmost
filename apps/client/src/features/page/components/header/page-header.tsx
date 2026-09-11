@@ -10,6 +10,7 @@ import { usePageQuery } from "@/features/page/queries/page-query.ts";
 import { extractPageSlugId } from "@/lib";
 import { buildPublicSpaceUrl } from "@/features/page/page.utils.ts";
 import { isBetaPublicSpaces } from "@/lib/config.ts";
+import PageTranslateToggle from "@/ee/ai/components/page-translate-toggle.tsx";
 
 interface Props {
   readOnly?: boolean;
@@ -60,6 +61,7 @@ export default function PageHeader({ readOnly }: Props) {
         </Group>
 
         <Group justify="flex-end" h="100%" px="md" wrap="nowrap" gap="var(--mantine-spacing-xs)">
+          <PageTranslateToggle />
           <PageHeaderMenu readOnly={readOnly} />
         </Group>
       </Group>

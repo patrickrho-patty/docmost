@@ -3,6 +3,7 @@ import { EmbeddingService } from './embedding.service';
 import { PageEmbeddingService } from './page-embedding.service';
 import { VectorSearchService } from './vector-search.service';
 import { AiAnswersService } from './ai-answers.service';
+import { AiTranslateService } from './ai-translate.service';
 import { AiController } from './ai.controller';
 import { AiQueueProcessor } from './ai.processor';
 import { AiProviderService } from './ai-provider.service';
@@ -19,6 +20,7 @@ import { AiProviderService } from './ai-provider.service';
     PageEmbeddingService,
     VectorSearchService,
     AiAnswersService,
+    AiTranslateService,
     AiQueueProcessor,
     AiProviderService,
   ],
@@ -27,6 +29,7 @@ import { AiProviderService } from './ai-provider.service';
     PageEmbeddingService,
     VectorSearchService,
     AiAnswersService,
+    AiTranslateService,
     AiProviderService,
   ],
 })
