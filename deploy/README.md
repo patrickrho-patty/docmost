@@ -7,13 +7,13 @@ just a convergence agent.
 ## Flow
 
 ```
-push to `custom` (app paths — deploy/** ignored)
+push to `main` (app paths — deploy/** ignored)
   → GARM: docker build (target: installer) → Harbor
        registry.patty.io/patty-kb/docmost:sha-<commit>
   → Kargo Warehouse → Freight
   → production Stage (MANUAL promote in https://deploy.patty.io)
        yaml-update writes the digest into
-       deploy/production/docker-compose.yml → commit → push to `custom`
+       deploy/production/docker-compose.yml → commit → push to `main`
   → the box (systemd timer, every 2 min):
        git fetch → HEAD moved? → git reset --hard origin/custom
                                  docker compose … pull && up -d
@@ -23,7 +23,7 @@ push to `custom` (app paths — deploy/** ignored)
 
 | Thing | Where |
 | --- | --- |
-| Checkout | `/opt/docmost` — a **real git checkout** of this repo (branch `custom`) |
+| Checkout | `/opt/docmost` — a **real git checkout** of this repo (branch `main`) |
 | Secrets | `/opt/docmost/.env` — **untracked**; survives `git reset --hard`. Never commit it |
 | Prod compose | `deploy/production/docker-compose.yml` — the `image:` digest line is Kargo-owned |
 | Data | Docker named volumes (`docmost_docmost-data`, `docmost_docmost-db-data`, `docmost_docmost-redis-data`, `docmost_ollama-models`) — untouched by checkout swaps |
@@ -58,7 +58,7 @@ YAML
 ## Rollback
 
 Promote the previous Freight (Kargo UI shows history), or revert the digest
-commit on `custom` — the box converges to either within ~2 minutes. The DB and
+commit on `main` — the box converges to either within ~2 minutes. The DB and
 its data are never part of a rollback.
 
 ## Hard rules

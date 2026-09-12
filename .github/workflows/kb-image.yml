@@ -9,7 +9,7 @@ name: kb-image
 
 on:
   push:
-    branches: [custom]
+    branches: [main]
     paths-ignore:
       - "deploy/**"
       - "docs/**"

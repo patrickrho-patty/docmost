@@ -9,7 +9,7 @@
 set -eu
 
 REPO_DIR=/opt/docmost
-BRANCH=custom
+BRANCH=main
 COMPOSE=deploy/production/docker-compose.yml
 
 cd "$REPO_DIR"

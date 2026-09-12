@@ -28,7 +28,7 @@ spec:
           config:
             repoURL: https://github.com/patty-io/patty-kb.git
             checkout:
-              - branch: custom
+              - branch: main
                 path: ./out
         - uses: yaml-update
           as: update-image
@@ -46,4 +46,4 @@ spec:
           as: push
           config:
             path: ./out
-            targetBranch: custom
+            targetBranch: main

@@ -7,7 +7,7 @@
 <p align="center">
 <a href="#"><img src="https://img.shields.io/badge/PATTY-INTERNAL-1769e0.svg?style=flat-square&labelColor=161616" alt="Patty Internal"/></a>
 <a href="./LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-1769e0.svg?style=flat-square&labelColor=161616" alt="License: AGPL-3.0"/></a>
-<a href="https://github.com/patty-io/patty-kb/actions/workflows/kb-image.yml"><img src="https://github.com/patty-io/patty-kb/actions/workflows/kb-image.yml/badge.svg?branch=custom" alt="kb-image"/></a>
+<a href="https://github.com/patty-io/patty-kb/actions/workflows/kb-image.yml"><img src="https://github.com/patty-io/patty-kb/actions/workflows/kb-image.yml/badge.svg?branch=main" alt="kb-image"/></a>
 <a href="https://patty.io"><img src="https://img.shields.io/badge/PATTY.IO-patty.io-1769e0.svg?style=flat-square&labelColor=161616" alt="patty.io"/></a>
 </p>
 
