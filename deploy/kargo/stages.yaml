@@ -35,7 +35,7 @@ spec:
           config:
             path: ./out/deploy/production/docker-compose.yml
             updates:
-              - path: services.docmost.image
+              - key: services.docmost.image
                 value: registry.patty.io/patty-kb/docmost@${{ imageFrom('registry.patty.io/patty-kb/docmost').Digest }}
         - uses: git-commit
           as: commit
