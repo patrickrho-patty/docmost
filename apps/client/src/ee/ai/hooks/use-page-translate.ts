@@ -191,7 +191,7 @@ export function usePageTranslate(pageId: string | undefined) {
     blocksRef.current = [];
     setViewingAll(false);
     setCached(false);
-    setProgress({ done: 0, total: 0 });
+    setProgress((p) => (p.done === 0 && p.total === 0 ? p : { done: 0, total: 0 }));
   }, [restoreDom, setViewingAll]);
 
   const detect = useCallback(() => {
@@ -204,6 +204,29 @@ export function usePageTranslate(pageId: string | undefined) {
     setPhaseAll(isMostlyKorean(text) ? "hidden" : "idle");
   }, [setPhaseAll]);
 
+  /** Hide and reset: the page entered edit mode, where translated DOM must
+   *  never exist (yjs would persist it). Guarded so repeated calls with
+   *  nothing to clear don't trigger re-renders. */
+  const hideForEditMode = useCallback(() => {
+    if (phaseRef.current === "hidden" && !viewingRef.current) return;
+    clearLocal();
+    setPhaseAll("hidden");
+  }, [clearLocal, setPhaseAll]);
+
+  /** Edit-mode guard + language (re)detection against the LIVE root.
+   *  Never re-detect while the translated view is applied: the DOM reads
+   *  as Korean then, and hiding would strand the user with no toggle to
+   *  switch back. */
+  const evaluateMode = useCallback(() => {
+    const root = findContentRoot();
+    if (!root) return;
+    if (root.getAttribute("contenteditable") === "true") {
+      hideForEditMode();
+    } else if (!viewingRef.current) {
+      detect();
+    }
+  }, [detect, hideForEditMode]);
+
   // language detection once the reader content has actually rendered
   useEffect(() => {
     clearLocal();
@@ -213,15 +236,14 @@ export function usePageTranslate(pageId: string | undefined) {
       const root = findContentRoot();
       tries += 1;
       if (root && (root.textContent ?? "").trim().length > 0) {
-        detect();
+        evaluateMode();
         clearInterval(timer);
       } else if (tries > 40) {
         clearInterval(timer);
       }
     }, 250);
     return () => clearInterval(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageId]);
+  }, [pageId, clearLocal, setPhaseAll, evaluateMode]);
 
   // leaving the page / unmount: stop the stream and restore the view
   useEffect(() => {
@@ -232,28 +254,16 @@ export function usePageTranslate(pageId: string | undefined) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageId]);
 
-  // edit mode must never see (or persist) translated DOM. Watch
-  // contenteditable changes AND ProseMirror root mount/unmount across the
-  // document, re-resolving the live root each time: while yjs syncs, the
-  // reader renders a static ProseMirror that is later unmounted and replaced
-  // by the collab editor — an observer captured on the static root goes deaf
-  // exactly when the real root's contenteditable settles, which left the
-  // toggle visible in edit mode. `phase` is a dep because the content root
-  // usually doesn't exist yet on first mount — detection flips the state
-  // once it renders, and this effect re-runs to start observing.
+  // edit mode must never see (or persist) translated DOM. Observe
+  // contenteditable changes AND ProseMirror root mount/unmount at the
+  // document level, re-resolving the live root each event: while yjs
+  // syncs, the reader renders a static ProseMirror that is later replaced
+  // by the collab editor, so a root captured once can go stale or be
+  // removed entirely. The observation target is document.body itself, so
+  // no state dependency is needed to (re)attach.
   useEffect(() => {
     if (typeof MutationObserver === "undefined") return;
-    const evaluate = () => {
-      const root = findContentRoot();
-      if (!root) return;
-      if (root.getAttribute("contenteditable") === "true") {
-        clearLocal();
-        setPhaseAll("hidden");
-      } else {
-        detect();
-      }
-    };
-    evaluate(); // page may LOAD directly into edit mode — hide at attach
+    evaluateMode(); // page may LOAD directly into edit mode — hide at attach
     const observer = new MutationObserver((mutations) => {
       const relevant = mutations.some(
         (m) =>
@@ -265,7 +275,7 @@ export function usePageTranslate(pageId: string | undefined) {
                 n.querySelector(".ProseMirror") !== null),
           ),
       );
-      if (relevant) evaluate();
+      if (relevant) evaluateMode();
     });
     observer.observe(document.body, {
       subtree: true,
@@ -274,7 +284,7 @@ export function usePageTranslate(pageId: string | undefined) {
       childList: true,
     });
     return () => observer.disconnect();
-  }, [pageId, clearLocal, detect, setPhaseAll, phase]);
+  }, [pageId, evaluateMode]);
 
   /**
    * Turn the translated view on. Idempotent: re-applies what we already
@@ -434,11 +444,8 @@ export function usePageTranslate(pageId: string | undefined) {
       if (!root) return;
       if (root.getAttribute("contenteditable") === "true") {
         // edit mode: never leave the toggle up, even if a mode flip was
-        // missed between observer reconnects
-        if (phaseRef.current !== "hidden") {
-          clearLocal();
-          setPhaseAll("hidden");
-        }
+        // missed between observer events
+        hideForEditMode();
         return;
       }
       const blocks = collectBlocks(root);
@@ -490,7 +497,7 @@ export function usePageTranslate(pageId: string | undefined) {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [phase, viewing, pageId, setPhaseAll, clearLocal]);
+  }, [phase, viewing, pageId, setPhaseAll, clearLocal, hideForEditMode]);
 
   return { phase, viewing, cached, progress, translate, toggleView, reprocess };
 }
