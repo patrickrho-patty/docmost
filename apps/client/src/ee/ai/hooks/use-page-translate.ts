@@ -20,8 +20,11 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import DOMPurify from "dompurify";
+import { useAtomValue } from "jotai";
+import { useEditorState } from "@tiptap/react";
 import { streamSseFrames } from "@/lib/stream-sse.ts";
 import api from "@/lib/api-client.ts";
+import { pageEditorAtom } from "@/features/editor/atoms/editor-atoms.ts";
 
 export type TranslatePhase =
   | "hidden" // page is Korean (or edit mode) — no toggle
@@ -123,6 +126,19 @@ export function usePageTranslate(pageId: string | undefined) {
   const [cached, setCached] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
 
+  // edit-mode truth comes from editor state, not DOM observation: the page
+  // editor folds page permission and the header mode toggle into
+  // editor.setEditable, and isEditable is connection-independent — so it is
+  // correct during the static preview (editor already editable before the
+  // collab root mounts) and during transient yjs disconnects alike.
+  const editor = useAtomValue(pageEditorAtom);
+  const editorIsEditable = useEditorState({
+    editor,
+    selector: (ctx) => ctx.editor?.isEditable ?? false,
+  });
+  const editorIsEditableRef = useRef(editorIsEditable);
+  editorIsEditableRef.current = editorIsEditable;
+
   // ref mirrors so timers and stream callbacks see current values without
   // re-binding (the poller interval must not restart on every state change)
   const phaseRef = useRef<TranslatePhase>("hidden");
@@ -213,14 +229,12 @@ export function usePageTranslate(pageId: string | undefined) {
     setPhaseAll("hidden");
   }, [clearLocal, setPhaseAll]);
 
-  /** Edit-mode guard + language (re)detection against the LIVE root.
-   *  Never re-detect while the translated view is applied: the DOM reads
-   *  as Korean then, and hiding would strand the user with no toggle to
-   *  switch back. */
-  const evaluateMode = useCallback(() => {
-    const root = findContentRoot();
-    if (!root) return;
-    if (root.getAttribute("contenteditable") === "true") {
+  /** Apply the editor's edit state: hide in edit mode, otherwise reveal/
+   *  re-detect. Never re-detect while the translated view is applied: the
+   *  DOM reads as Korean then, and hiding would strand the user with no
+   *  toggle to switch back. */
+  const applyModeState = useCallback(() => {
+    if (editorIsEditableRef.current) {
       hideForEditMode();
     } else if (!viewingRef.current) {
       detect();
@@ -236,14 +250,14 @@ export function usePageTranslate(pageId: string | undefined) {
       const root = findContentRoot();
       tries += 1;
       if (root && (root.textContent ?? "").trim().length > 0) {
-        evaluateMode();
+        applyModeState();
         clearInterval(timer);
       } else if (tries > 40) {
         clearInterval(timer);
       }
     }, 250);
     return () => clearInterval(timer);
-  }, [pageId, clearLocal, setPhaseAll, evaluateMode]);
+  }, [pageId, clearLocal, setPhaseAll, applyModeState]);
 
   // leaving the page / unmount: stop the stream and restore the view
   useEffect(() => {
@@ -254,37 +268,12 @@ export function usePageTranslate(pageId: string | undefined) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageId]);
 
-  // edit mode must never see (or persist) translated DOM. Observe
-  // contenteditable changes AND ProseMirror root mount/unmount at the
-  // document level, re-resolving the live root each event: while yjs
-  // syncs, the reader renders a static ProseMirror that is later replaced
-  // by the collab editor, so a root captured once can go stale or be
-  // removed entirely. The observation target is document.body itself, so
-  // no state dependency is needed to (re)attach.
+  // react to edit-mode transitions (header toggle, permission changes) —
+  // editor.setEditable emits an update, so useEditorState re-runs the
+  // selector and this effect applies the new state
   useEffect(() => {
-    if (typeof MutationObserver === "undefined") return;
-    evaluateMode(); // page may LOAD directly into edit mode — hide at attach
-    const observer = new MutationObserver((mutations) => {
-      const relevant = mutations.some(
-        (m) =>
-          m.type === "attributes" ||
-          [...m.addedNodes, ...m.removedNodes].some(
-            (n) =>
-              n instanceof HTMLElement &&
-              (n.classList.contains("ProseMirror") ||
-                n.querySelector(".ProseMirror") !== null),
-          ),
-      );
-      if (relevant) evaluateMode();
-    });
-    observer.observe(document.body, {
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["contenteditable"],
-      childList: true,
-    });
-    return () => observer.disconnect();
-  }, [pageId, evaluateMode]);
+    applyModeState();
+  }, [editorIsEditable, applyModeState]);
 
   /**
    * Turn the translated view on. Idempotent: re-applies what we already
@@ -443,8 +432,10 @@ export function usePageTranslate(pageId: string | undefined) {
       const root = findContentRoot();
       if (!root) return;
       if (root.getAttribute("contenteditable") === "true") {
-        // edit mode: never leave the toggle up, even if a mode flip was
-        // missed between observer events
+        // DOM-level safety net: the live root is the click-time authority
+        // for whether swapping is safe, so never leave the toggle up when
+        // it says editable — even if editor state disagreed momentarily
+        // (e.g. before the editor instance existed)
         hideForEditMode();
         return;
       }
