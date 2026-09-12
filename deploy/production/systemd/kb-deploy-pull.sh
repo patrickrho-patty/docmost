@@ -1,26 +1,33 @@
 #!/bin/sh
 # Patty KB convergence agent (contabo-japan).
 #
-# Mechanics only: if the deploy branch moved, hard-reset the checkout and let
-# compose converge to the Kargo-pinned digest. It never decides anything —
-# every deploy decision lives in git (written by the Kargo production Stage).
+# Mechanics only: converge the box to whatever git says. A failed apply is
+# retried on the next tick (the last-applied marker only advances on success).
 #
-# Installed as: /opt/docmost-deploy-pull.sh + docmost-deploy-pull.{service,timer}
+# Installed as: /opt/docmost-deploy-pull.sh + kb-deploy-pull.{service,timer}
 set -eu
 
 REPO_DIR=/opt/docmost
 BRANCH=main
 COMPOSE=deploy/production/docker-compose.yml
+STATE_DIR=/var/lib/kb-deploy
+STATE=$STATE_DIR/last-applied
 
 cd "$REPO_DIR"
 git fetch -q origin "$BRANCH"
-LOCAL=$(git rev-parse HEAD)
 REMOTE=$(git rev-parse "origin/$BRANCH")
+APPLIED=$(cat "$STATE" 2>/dev/null || echo none)
 
-[ "$LOCAL" = "$REMOTE" ] && exit 0
+[ "$APPLIED" = "$REMOTE" ] && exit 0
 
-logger -t kb-deploy "converging: ${LOCAL%????????} -> ${REMOTE%????????}"
+logger -t kb-deploy "converging: $(echo "$APPLIED" | cut -c1-7) -> $(echo "$REMOTE" | cut -c1-7)"
 git reset -q --hard "origin/$BRANCH"
-docker compose -f "$COMPOSE" pull -q
-docker compose -f "$COMPOSE" up -d
-logger -t kb-deploy "converged to ${REMOTE%????????}"
+
+if docker compose -f "$COMPOSE" pull -q && docker compose -f "$COMPOSE" up -d; then
+  mkdir -p "$STATE_DIR"
+  echo "$REMOTE" > "$STATE"
+  logger -t kb-deploy "converged to $(echo "$REMOTE" | cut -c1-7)"
+else
+  logger -t kb-deploy "converge FAILED at $(echo "$REMOTE" | cut -c1-7) — retrying next tick"
+  exit 1
+fi

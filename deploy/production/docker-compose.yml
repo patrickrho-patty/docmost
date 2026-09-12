@@ -15,6 +15,8 @@
 # AI stack (PAT-2329):
 #   - embeddings: ollama service below (bge-m3, CPU-only, network-internal)
 #   - completions: MiniMax OpenAI-compatible endpoint (OPENAI_API_URL in .env)
+name: docmost   # project pin — adopts the existing docmost_* containers/volumes
+
 services:
   docmost:
     # ⚠️ Kargo-owned line (yaml-update: services.docmost.image)
