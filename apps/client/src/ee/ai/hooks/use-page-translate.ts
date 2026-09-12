@@ -18,12 +18,17 @@
  *  - entering edit mode restores the originals immediately (translated DOM
  *    must never reach the collaborative editor)
  *
- * The shared job/cache key ("page version") is a hash of the blocks'
- * NORMALIZED TEXT, not their HTML: every viewer must derive the same key
- * from the same synced document, and HTML serialization is browser- and
- * renderer-dependent (static preview vs live collab editor, style/entity
- * encoding) while text content is not. A text edit changes the key and
- * therefore misses the cache; a formatting-only edit keeps it.
+ * The shared job/cache key ("page version") is derived BY BOTH SIDES from
+ * the blocks' NORMALIZED TEXT, never from HTML: the server hashes the text
+ * of the blocks it receives (cheerio extraction; a client-sent key is never
+ * trusted), and this hook derives the identical key from the live DOM for
+ * its status polls — textContent is spec-stable across browsers while HTML
+ * serialization is not (static preview vs live collab editor, style/entity
+ * encoding), so every viewer finds the same job and cache entry. A text
+ * edit changes the key and misses the cache; a formatting-only edit keeps
+ * it. Collab carets/selections and transcluded content are stripped from
+ * the key inputs (see collectBlocks) — both are per-viewer DOM that no
+ * stable page version can include.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import DOMPurify from "dompurify";
@@ -53,8 +58,10 @@ const POLL_INTERVAL_MS = 4000;
  * sha256 of the block version payload: `[{id, text}]` where text is the
  * block's normalized text content. Every viewer derives the identical key
  * from the same document (textContent is spec-stable across browsers, unlike
- * innerHTML), so a job started by one person is found by everyone else.
- * The server trusts this value as a cache key only — it is never executed.
+ * innerHTML), and the server derives the same key from the received blocks'
+ * HTML via cheerio — so a job started by one person is found by everyone
+ * else. Used only for status polls; the server never trusts a client-sent
+ * key for writes.
  */
 async function computeSourceHash(
   blocks: { id: number; text: string }[],
@@ -66,10 +73,11 @@ async function computeSourceHash(
     .join("");
 }
 
-/** Collapse whitespace and unify nbsp so extraction differences between
- *  renderers can never change the version key. */
+/** Collapse whitespace so extraction differences between renderers can
+ *  never change the version key (JS \s already covers nbsp). Must stay
+ *  byte-identical to the server-side normalization in ai-translate.service. */
 function normalizeBlockText(text: string): string {
-  return text.replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
+  return text.replace(/\s+/g, " ").trim();
 }
 
 const HANGUL = /[가-힯ᄀ-ᅟᅠ-ᆯ]/g;
@@ -118,21 +126,44 @@ function findContentRoot(): HTMLElement | null {
   return roots[0] ?? null;
 }
 
-/** Top-level blocks worth translating. Skips code blocks, image-only rows,
- *  embeds and empty spacing nodes. */
-function collectBlocks(
-  root: HTMLElement,
-): { el: HTMLElement; html: string }[] {
-  const out: { el: HTMLElement; html: string }[] = [];
+const COLLAB_ARTIFACTS =
+  ".collaboration-carets__caret, .collaboration-carets__selection, " +
+  ".ProseMirror-yjs-caret, .ProseMirror-yjs-selection";
+
+/** The element to read block content from: the block itself, or — when
+ *  collab carets/selections are present — a clone with them stripped.
+ *  Caret labels carry remote user names as text and move as viewers click
+ *  around, so they must never feed the version key, the language check, or
+ *  the translation payload (they would also be baked into the cache). */
+function contentElement(el: HTMLElement): HTMLElement {
+  if (!el.querySelector(COLLAB_ARTIFACTS)) return el;
+  const clone = el.cloneNode(true) as HTMLElement;
+  clone.querySelectorAll(COLLAB_ARTIFACTS).forEach((n) => n.remove());
+  return clone;
+}
+
+/** Clean block HTML for the translation payload (collab artifacts out). */
+function blockHtml(el: HTMLElement): string {
+  return contentElement(el).innerHTML;
+}
+
+/** Top-level blocks worth translating, with their clean text. Skips code
+ *  blocks, image-only rows, embeds, transclusions and empty spacing nodes. */
+function collectBlocks(root: HTMLElement): { el: HTMLElement; text: string }[] {
+  const out: { el: HTMLElement; text: string }[] = [];
   const children = Array.from(root.children) as HTMLElement[];
   for (const el of children) {
     const tag = el.tagName;
     if (tag === "PRE") continue;
     if (tag === "IMG" || tag === "HR" || tag === "TABLE") continue;
-    const text = (el.textContent ?? "").trim();
-    if (text.length < 2) continue;
+    // transcluded (synced) content is owned by its source page and renders
+    // asynchronously, per-viewer permissions — no stable page version can
+    // include it; translate the source page instead
+    if (el.matches('[data-type="transclusionReference"]')) continue;
     if (el.querySelector("pre")) continue;
-    out.push({ el, html: el.innerHTML });
+    const text = (contentElement(el).textContent ?? "").trim();
+    if (text.length < 2) continue;
+    out.push({ el, text });
   }
   return out;
 }
@@ -336,6 +367,8 @@ export function usePageTranslate(pageId: string | undefined) {
       const blocks = collectBlocks(root);
       if (blocks.length === 0) return;
 
+      // originals are the RAW innerHTML: restore must hand the live DOM
+      // back exactly what it had, collab caret decorations included
       originalsRef.current = new Map(
         blocks.map((b) => [b.el, b.el.innerHTML]),
       );
@@ -344,19 +377,12 @@ export function usePageTranslate(pageId: string | undefined) {
       setProgress({ done: 0, total: blocks.length });
       setPhaseAll("busy");
 
+      // the payload (and therefore the server-derived version key) is the
+      // CLEAN html — collab artifacts must not reach the model or the cache
       const payload = blocksRef.current.map((b) => ({
         id: b.id,
-        html: originalsRef.current.get(b.el) ?? "",
+        html: blockHtml(b.el),
       }));
-
-      // the shared job/cache key: normalized text of the exact blocks we
-      // are about to send — identical for every viewer of this page version
-      const sourceHash = await computeSourceHash(
-        blocksRef.current.map((b) => ({
-          id: b.id,
-          text: normalizeBlockText(b.el.textContent ?? ""),
-        })),
-      );
 
       const abort = new AbortController();
       abortRef.current = abort;
@@ -369,7 +395,7 @@ export function usePageTranslate(pageId: string | undefined) {
         cached?: boolean;
       }>({
         url: "/api/ai/translate",
-        body: { pageId: pid, blocks: payload, force, sourceHash },
+        body: { pageId: pid, blocks: payload, force },
         signal: abort.signal,
         onFrame: (frame) => {
           if (frame.cached) {
@@ -478,10 +504,7 @@ export function usePageTranslate(pageId: string | undefined) {
         // send only the digest: the poller fires every few seconds per
         // viewer and the full page HTML can be ~200KB
         const sourceHash = await computeSourceHash(
-          blocks.map((b, i) => ({
-            id: i,
-            text: normalizeBlockText(b.el.textContent ?? ""),
-          })),
+          blocks.map((b, i) => ({ id: i, text: normalizeBlockText(b.text) })),
         );
         if (cancelled || streamOpenRef.current || viewingRef.current) return;
         // the axios client carries auth + unwraps the API envelope

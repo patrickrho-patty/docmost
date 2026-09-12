@@ -48,17 +48,6 @@ export class AiTranslateDto {
   @IsArray()
   blocks: TranslateBlock[];
 
-  /**
-   * Client-computed version key: sha256 (hex) of the blocks' normalized
-   * text. Every viewer derives the identical key from the same document
-   * (HTML serialization would be browser-dependent; text is not), so jobs
-   * and cache entries are shared across users. See use-page-translate.ts.
-   */
-  @IsNotEmpty()
-  @IsString()
-  @Matches(/^[0-9a-f]{64}$/)
-  sourceHash: string;
-
   @IsOptional()
   @IsBoolean()
   force?: boolean;
@@ -69,8 +58,11 @@ export class AiTranslateStatusDto {
   @IsUUID()
   pageId: string;
 
-  @IsNotEmpty()
+  /** Client-derived version key (use-page-translate.ts); a lookup key only —
+   *  the server derives its own key for writes, so a wrong value simply
+   *  misses. */
   @IsString()
+  @Matches(/^[0-9a-f]{64}$/)
   sourceHash: string;
 }
 
@@ -165,7 +157,6 @@ export class AiController {
       await this.aiTranslateService.streamPageTranslation({
         pageId: dto.pageId,
         blocks: dto.blocks ?? [],
-        sourceHash: dto.sourceHash,
         userId: user.id,
         force: dto.force === true,
         write: (obj) => sse.emit(obj),

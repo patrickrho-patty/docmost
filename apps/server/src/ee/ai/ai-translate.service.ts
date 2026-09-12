@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { load } from 'cheerio';
 import { PagePermissionRepo } from '@docmost/db/repos/page/page-permission.repo';
 import { PageTranslationRepo } from '@docmost/db/repos/page/page-translation.repo';
@@ -43,13 +44,15 @@ interface TranslateJob {
  * PAT-2723: view-only AI translation of a page into Korean, cached per page
  * version and shared between concurrent viewers.
  *
- * "Page version" is `sourceHash`, computed BY THE CLIENT as sha256 of the
- * blocks' normalized text (use-page-translate.ts): every viewer derives the
- * identical key from the same synced document, while HTML serialization is
- * browser/renderer-dependent and would fragment the cache per client. The
- * value is only ever a lookup key — it names the cache row, it is never
- * executed — so client computation is safe to trust here. A text edit
- * changes the key and therefore misses the cache.
+ * "Page version" is `sourceHash`, derived BY THE SERVER as sha256 of the
+ * received blocks' normalized text (see hashBlocks): HTML serialization is
+ * browser/renderer-dependent and would fragment the cache per client, while
+ * text extraction is stable. The client's status poller derives the
+ * identical key from the live DOM (use-page-translate.ts) — the derivation
+ * must match or jobs/cache fragment per viewer. Deriving here (never
+ * trusting a client-sent key) keeps a crafted request from writing another
+ * page version's cache row. A text edit changes the key and therefore
+ * misses the cache; a formatting-only edit keeps it.
  *
  * One POST /ai/translate call per viewer, three server behaviors:
  *   - a live job for this version exists  -> join: replay done blocks, then
@@ -89,13 +92,12 @@ export class AiTranslateService {
   async streamPageTranslation(opts: {
     pageId: string;
     blocks: TranslateBlock[];
-    sourceHash: string;
     userId: string;
     force?: boolean;
     write: (obj: any) => void;
     signal?: AbortSignal;
   }): Promise<void> {
-    const { pageId, blocks, sourceHash, userId, force, write, signal } = opts;
+    const { pageId, blocks, userId, force, write, signal } = opts;
 
     // The SSE response is already initialized by the controller, so report
     // access denial as an error frame (throwing here would lose the message
@@ -131,12 +133,7 @@ export class AiTranslateService {
       }
     }
 
-    // DTO validation covers the envelope (@Matches hex64); defense in depth
-    // for callers that bypass the HTTP layer.
-    if (!/^[0-9a-f]{64}$/.test(sourceHash)) {
-      write({ error: 'Invalid source hash' });
-      return;
-    }
+    const sourceHash = this.hashBlocks(blocks);
     const key = `${pageId}:${sourceHash}`;
 
     // Live job for this exact version -> join it (even with force: never run
@@ -227,7 +224,10 @@ export class AiTranslateService {
     if (job && !job.done) {
       return { state: 'in_progress', done: job.blocks.size, total: job.total };
     }
-    const row = await this.translationRepo.findByPageAndHash(pageId, sourceHash);
+    const row = await this.translationRepo.findStatusByPageAndHash(
+      pageId,
+      sourceHash,
+    );
     if (row?.status === 'complete') {
       return { state: 'cached' };
     }
@@ -240,6 +240,25 @@ export class AiTranslateService {
   }
 
   // ------------------------------------------------------------------ jobs
+
+  /**
+   * Version key for a block payload: sha256 of `[{id, text}]` with text
+   * extracted via cheerio and whitespace-collapsed. Must stay byte-identical
+   * to the client derivation (normalizeBlockText over DOM textContent in
+   * use-page-translate.ts) — both concatenate text descendants the same way,
+   * so honest viewers always land on the same key.
+   */
+  private hashBlocks(blocks: TranslateBlock[]): string {
+    const payload = blocks.map((b) => ({
+      id: b.id,
+      text: load(b.html, null, false)
+        .root()
+        .text()
+        .replace(/\s+/g, ' ')
+        .trim(),
+    }));
+    return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+  }
 
   private broadcast(job: TranslateJob, obj: any): void {
     for (const subscriber of job.subscribers) {

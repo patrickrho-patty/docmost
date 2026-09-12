@@ -36,6 +36,20 @@ export class PageTranslationRepo {
       .executeTakeFirst();
   }
 
+  /** Status projection for the per-viewer poll hot path — skips the blocks
+   *  jsonb column, which a complete row can grow to hundreds of KB. */
+  async findStatusByPageAndHash(
+    pageId: string,
+    sourceHash: string,
+  ): Promise<{ status: string; updatedAt: Date } | undefined> {
+    return this.db
+      .selectFrom('pageTranslations')
+      .select(['status', 'updatedAt'])
+      .where('pageId', '=', pageId)
+      .where('sourceHash', '=', sourceHash)
+      .executeTakeFirst();
+  }
+
   /** Create the job row, or reset an existing (stale/failed) one. */
   async startJob(opts: {
     pageId: string;

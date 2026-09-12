@@ -6,8 +6,9 @@ export interface TranslatedBlock {
 }
 
 // PAT-2723: cached AI translation of a page (targetLang 'ko') keyed by the
-// sha256 of the source-block HTML the client sent. `status` carries the
-// shared job lifecycle: in_progress while a job runs, complete when done.
+// sha256 of the source blocks' normalized text (see ai-translate.service).
+// `status` carries the shared job lifecycle: in_progress while a job runs,
+// complete when done.
 export interface PageTranslation {
   id: Generated<string>;
   pageId: string;

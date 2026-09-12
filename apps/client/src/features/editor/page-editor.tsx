@@ -163,9 +163,7 @@ export default function PageEditor({
           </HocuspocusRoom>
         </HocuspocusProviderWebsocketComponent>
       ) : (
-        <div className="editor-container">
-          <StaticPageEditor content={content} ariaLabel={t("Page content")} />
-        </div>
+        <StaticReader content={content} ariaLabel={t("Page content")} />
       )}
     </TransclusionLookupProvider>
   );
@@ -462,11 +460,7 @@ function CollabPageEditor({
   }, [yjsConnectionStatus, isSynced]);
 
   if (showStatic) {
-    return (
-      <div className="editor-container">
-        <StaticPageEditor content={content} ariaLabel={t("Page content")} />
-      </div>
-    );
+    return <StaticReader content={content} ariaLabel={t("Page content")} />;
   }
 
   return (
@@ -519,6 +513,23 @@ function CollabPageEditor({
         }}
         style={{ paddingBottom: "20vh" }}
       ></div>
+    </div>
+  );
+}
+
+/** Static read path (no collab connection yet). The .editor-container
+ *  marker matches the live editor's wrapper so the translate hook resolves
+ *  the same content root in both render states. */
+function StaticReader({
+  content,
+  ariaLabel,
+}: {
+  content: any;
+  ariaLabel: string;
+}) {
+  return (
+    <div className="editor-container">
+      <StaticPageEditor content={content} ariaLabel={ariaLabel} />
     </div>
   );
 }
