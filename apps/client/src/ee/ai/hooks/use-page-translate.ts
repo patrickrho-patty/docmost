@@ -232,16 +232,20 @@ export function usePageTranslate(pageId: string | undefined) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageId]);
 
-  // edit mode must never see (or persist) translated DOM: watch the editor
-  // root's contenteditable flag — restore as soon as editing starts, and
-  // re-detect (revealing the toggle) when the page flips back to read mode.
-  // `phase` is a dep because the content root usually doesn't exist yet on
-  // first mount — detection flips the state once it renders, and this effect
-  // re-runs to attach the observer to the now-available root.
+  // edit mode must never see (or persist) translated DOM. Watch
+  // contenteditable changes AND ProseMirror root mount/unmount across the
+  // document, re-resolving the live root each time: while yjs syncs, the
+  // reader renders a static ProseMirror that is later unmounted and replaced
+  // by the collab editor — an observer captured on the static root goes deaf
+  // exactly when the real root's contenteditable settles, which left the
+  // toggle visible in edit mode. `phase` is a dep because the content root
+  // usually doesn't exist yet on first mount — detection flips the state
+  // once it renders, and this effect re-runs to start observing.
   useEffect(() => {
-    const root = findContentRoot();
-    if (!root || typeof MutationObserver === "undefined") return;
-    const onModeChange = () => {
+    if (typeof MutationObserver === "undefined") return;
+    const evaluate = () => {
+      const root = findContentRoot();
+      if (!root) return;
       if (root.getAttribute("contenteditable") === "true") {
         clearLocal();
         setPhaseAll("hidden");
@@ -249,11 +253,25 @@ export function usePageTranslate(pageId: string | undefined) {
         detect();
       }
     };
-    onModeChange(); // page may LOAD directly into edit mode — hide at attach
-    const observer = new MutationObserver(onModeChange);
-    observer.observe(root, {
+    evaluate(); // page may LOAD directly into edit mode — hide at attach
+    const observer = new MutationObserver((mutations) => {
+      const relevant = mutations.some(
+        (m) =>
+          m.type === "attributes" ||
+          [...m.addedNodes, ...m.removedNodes].some(
+            (n) =>
+              n instanceof HTMLElement &&
+              (n.classList.contains("ProseMirror") ||
+                n.querySelector(".ProseMirror") !== null),
+          ),
+      );
+      if (relevant) evaluate();
+    });
+    observer.observe(document.body, {
+      subtree: true,
       attributes: true,
       attributeFilter: ["contenteditable"],
+      childList: true,
     });
     return () => observer.disconnect();
   }, [pageId, clearLocal, detect, setPhaseAll, phase]);
@@ -413,7 +431,16 @@ export function usePageTranslate(pageId: string | undefined) {
       const pid = pageIdRef.current;
       if (!pid) return;
       const root = findContentRoot();
-      if (!root || root.getAttribute("contenteditable") === "true") return;
+      if (!root) return;
+      if (root.getAttribute("contenteditable") === "true") {
+        // edit mode: never leave the toggle up, even if a mode flip was
+        // missed between observer reconnects
+        if (phaseRef.current !== "hidden") {
+          clearLocal();
+          setPhaseAll("hidden");
+        }
+        return;
+      }
       const blocks = collectBlocks(root);
       if (blocks.length === 0) return;
 
@@ -463,7 +490,7 @@ export function usePageTranslate(pageId: string | undefined) {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [phase, viewing, pageId, setPhaseAll]);
+  }, [phase, viewing, pageId, setPhaseAll, clearLocal]);
 
   return { phase, viewing, cached, progress, translate, toggleView, reprocess };
 }
