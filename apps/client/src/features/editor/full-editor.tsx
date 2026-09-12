@@ -15,7 +15,10 @@ import {
 } from "@mantine/core";
 import { IconInfoCircle } from "@tabler/icons-react";
 import { useAtom } from "jotai";
-import { userAtom } from "@/features/user/atoms/current-user-atom.ts";
+import {
+  userAtom,
+  workspaceAtom,
+} from "@/features/user/atoms/current-user-atom.ts";
 import { CustomAvatar } from "@/components/ui/custom-avatar.tsx";
 import { PageVerificationBadge } from "@/ee/page-verification";
 import { useTranslation } from "react-i18next";
@@ -73,18 +76,26 @@ export function FullEditor({
   const [currentPageEditMode, setCurrentPageEditMode] = useAtom(
     currentPageEditModeAtom,
   );
-  const userPageEditMode =
-    user.settings?.preferences?.pageEditMode ?? PageEditMode.Edit;
+  // The workspace default is the single source of truth (the per-user
+  // preference was removed) — it dictates the initial mode for everyone.
+  const [workspace] = useAtom(workspaceAtom);
+  const wsDefaultMode = workspace?.settings?.defaultPageEditMode;
+  const workspacePageEditMode: PageEditMode =
+    wsDefaultMode === PageEditMode.Read || wsDefaultMode === PageEditMode.Edit
+      ? wsDefaultMode
+      : PageEditMode.Edit;
   const isEditMode = currentPageEditMode === PageEditMode.Edit;
 
-  // Apply the user's saved preference only once on initial load, not on every
-  // page navigation — so the mode sticks across navigations within a session.
+  // Apply the workspace default only once on initial load, not on every page
+  // navigation — so the mode sticks across navigations within a session.
+  // The latch waits for the workspace settings to actually be loaded:
+  // otherwise the Edit fallback would win the race on a fresh session.
   useEffect(() => {
-    if (!defaultEditModeApplied) {
-      setCurrentPageEditMode(userPageEditMode as PageEditMode);
+    if (!defaultEditModeApplied && workspace) {
+      setCurrentPageEditMode(workspacePageEditMode);
       defaultEditModeApplied = true;
     }
-  }, [userPageEditMode, setCurrentPageEditMode]);
+  }, [workspace, workspacePageEditMode, setCurrentPageEditMode]);
 
   return (
     <Container

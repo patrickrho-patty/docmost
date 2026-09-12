@@ -53,14 +53,6 @@ export class UserService {
       );
     }
 
-    if (typeof updateUserDto.pageEditMode !== 'undefined') {
-      return this.userRepo.updatePreference(
-        userId,
-        'pageEditMode',
-        updateUserDto.pageEditMode.toLowerCase(),
-      );
-    }
-
     if (typeof updateUserDto.editorToolbar !== 'undefined') {
       return this.userRepo.updatePreference(
         userId,

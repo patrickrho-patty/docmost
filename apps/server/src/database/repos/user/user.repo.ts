@@ -112,7 +112,6 @@ export class UserRepo {
   async insertUser(
     insertableUser: InsertableUser,
     trx?: KyselyTransaction,
-    opts?: { pageEditMode?: string },
   ): Promise<User> {
     const user: InsertableUser = {
       name:
@@ -130,13 +129,6 @@ export class UserRepo {
       .values({
         ...insertableUser,
         ...user,
-        ...(opts?.pageEditMode
-          ? {
-              settings: sql`${JSON.stringify({
-                preferences: { pageEditMode: opts.pageEditMode },
-              })}::text::jsonb`,
-            }
-          : {}),
       })
       .returning(this.baseFields)
       .executeTakeFirst();

@@ -17,7 +17,7 @@ export default function WorkspaceDefaultPageEditMode() {
         <Text size="md">{t("Default page edit mode")}</Text>
         <Text size="sm" c="dimmed">
           {t(
-            "Choose the page edit mode new members start with. Existing members are not affected.",
+            "Choose the default page edit mode for all members. Individual pages can still be switched between Read and Edit.",
           )}
         </Text>
       </div>

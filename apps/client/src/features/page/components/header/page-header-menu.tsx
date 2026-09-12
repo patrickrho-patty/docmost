@@ -41,7 +41,7 @@ import {
   yjsConnectionStatusAtom,
 } from "@/features/editor/atoms/editor-atoms.ts";
 import { formattedDate } from "@/lib/time.ts";
-import { PageEditModeToggle } from "@/features/user/components/page-state-pref.tsx";
+import { PageEditModeToggle } from "@/features/page/components/header/page-edit-mode-toggle.tsx";
 import MovePageModal from "@/features/page/components/move-page-modal.tsx";
 import PageAttachmentsModal from "@/features/attachments/components/page-attachments-modal.tsx";
 import { useTimeAgo } from "@/hooks/use-time-ago.tsx";

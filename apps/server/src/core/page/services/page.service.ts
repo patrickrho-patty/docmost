@@ -32,6 +32,7 @@ import {
 } from '../../../common/helpers/prosemirror/utils';
 import {
   htmlToJson,
+  jsonToMarkdown,
   jsonToNode,
   jsonToText,
 } from 'src/collaboration/collaboration.util';
@@ -1067,8 +1068,10 @@ export class PageService {
 
     switch (format) {
       case 'markdown': {
-        const html = await markdownToHtml(content as string);
+        const markdown = content as string;
+        const html = await markdownToHtml(markdown);
         prosemirrorJson = htmlToJson(html as string);
+        this.assertMarkdownRoundTrip(markdown, prosemirrorJson);
         break;
       }
       case 'html': {
@@ -1089,6 +1092,28 @@ export class PageService {
     }
 
     return prosemirrorJson;
+  }
+
+  /**
+   * Defense against silent truncation in the markdown pipeline (data-loss
+   * report: a large body stored as a ~200-char prefix while the API
+   * returned success). The converter either converts everything or throws —
+   * so a round-trip that is drastically shorter than the input means
+   * content was dropped somewhere upstream of here, and it must never be
+   * persisted silently. Comparing markdown-in against markdown-out keeps
+   * the check format-faithful: syntax round-trips at roughly 1:1, while a
+   * real collapse measures an order of magnitude below that.
+   */
+  private assertMarkdownRoundTrip(input: string, prosemirrorJson: any): void {
+    const inputLength = input.replace(/\s+/g, '').length;
+    if (inputLength < 1000) return; // tiny docs: check adds noise, not signal
+    const roundTripLength = jsonToMarkdown(prosemirrorJson).replace(/\s+/g, '')
+      .length;
+    if (roundTripLength < inputLength * 0.5) {
+      throw new BadRequestException(
+        `Markdown conversion collapsed: only ${roundTripLength} of ${inputLength} non-whitespace characters survived the round trip. Content was NOT saved — report this with the source markdown.`,
+      );
+    }
   }
 
   /**

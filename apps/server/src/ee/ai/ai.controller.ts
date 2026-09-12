@@ -6,12 +6,20 @@ import {
   HttpCode,
   HttpStatus,
   Logger,
+  NotFoundException,
   Post,
   Res,
   UseGuards,
 } from '@nestjs/common';
 import { FastifyReply } from 'fastify';
-import { IsArray, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+} from 'class-validator';
 import { AuthUser } from '../../common/decorators/auth-user.decorator';
 import { AuthWorkspace } from '../../common/decorators/auth-workspace.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -38,6 +46,20 @@ export class AiTranslateDto {
 
   @IsArray()
   blocks: TranslateBlock[];
+
+  @IsOptional()
+  @IsBoolean()
+  force?: boolean;
+}
+
+export class AiTranslateStatusDto {
+  @IsNotEmpty()
+  @IsUUID()
+  pageId: string;
+
+  @IsNotEmpty()
+  @IsString()
+  sourceHash: string;
 }
 
 /**
@@ -108,6 +130,10 @@ export class AiController {
    * Blocks arrive from the client (what the reader is rendering); each
    * finished translation streams back as {"block":{id,html}} so the view
    * fills in progressively. See use-page-translate.ts for the client half.
+   *
+   * Unlike /answers, client disconnect does NOT abort the job: translation
+   * is shared state — other viewers may be watching the same stream, and a
+   * finished job warms the per-page-version cache.
    */
   @HttpCode(HttpStatus.OK)
   @Post('translate')
@@ -122,16 +148,14 @@ export class AiController {
     }
 
     const sse = initSseResponse(res);
-    const abort = new AbortController();
-    sse.bindAbort(abort);
 
     try {
       await this.aiTranslateService.streamPageTranslation({
         pageId: dto.pageId,
         blocks: dto.blocks ?? [],
         userId: user.id,
+        force: dto.force === true,
         write: (obj) => sse.emit(obj),
-        signal: abort.signal,
       });
     } catch (err) {
       this.logger.error(`AI translate failed: ${err?.['message'] ?? err}`);
@@ -139,5 +163,32 @@ export class AiController {
     } finally {
       sse.close();
     }
+  }
+
+  /**
+   * PAT-2723: lightweight job-state probe for the translate toggle's status
+   * poller. Plain JSON (not SSE): { state: 'none' | 'in_progress' | 'cached',
+   * done?, total? }.
+   */
+  @HttpCode(HttpStatus.OK)
+  @Post('translate/status')
+  async translateStatus(
+    @Body() dto: AiTranslateStatusDto,
+    @AuthUser() user: User,
+    @AuthWorkspace() workspace: Workspace,
+  ) {
+    if (getAiSettings(workspace).search !== true) {
+      throw new ForbiddenException('AI is not enabled');
+    }
+
+    const status = await this.aiTranslateService.getStatus({
+      pageId: dto.pageId,
+      sourceHash: dto.sourceHash,
+      userId: user.id,
+    });
+    if (status === null) {
+      throw new NotFoundException('Page not found');
+    }
+    return status;
   }
 }

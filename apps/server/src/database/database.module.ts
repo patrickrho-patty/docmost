@@ -10,6 +10,7 @@ import { SpaceRepo } from '@docmost/db/repos/space/space.repo';
 import { SpaceMemberRepo } from '@docmost/db/repos/space/space-member.repo';
 import { PageRepo } from './repos/page/page.repo';
 import { PagePermissionRepo } from './repos/page/page-permission.repo';
+import { PageTranslationRepo } from './repos/page/page-translation.repo';
 import { CommentRepo } from './repos/comment/comment.repo';
 import { PageTransclusionsRepo } from './repos/page-transclusions/page-transclusions.repo';
 import { PageTransclusionReferencesRepo } from './repos/page-transclusions/page-transclusion-references.repo';
@@ -79,6 +80,7 @@ import { normalizePostgresUrl } from '../common/helpers';
     SpaceMemberRepo,
     PageRepo,
     PagePermissionRepo,
+    PageTranslationRepo,
     PageTransclusionsRepo,
     PageTransclusionReferencesRepo,
     PageHistoryRepo,
@@ -105,6 +107,7 @@ import { normalizePostgresUrl } from '../common/helpers';
     SpaceMemberRepo,
     PageRepo,
     PagePermissionRepo,
+    PageTranslationRepo,
     PageTransclusionsRepo,
     PageTransclusionReferencesRepo,
     PageHistoryRepo,

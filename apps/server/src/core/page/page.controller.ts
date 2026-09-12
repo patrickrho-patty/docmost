@@ -255,16 +255,20 @@ export class PageController {
       },
     });
 
-    if (
-      createPageDto.format &&
-      createPageDto.format !== 'json' &&
-      page.content
-    ) {
-      const contentOutput =
-        createPageDto.format === 'markdown'
-          ? jsonToMarkdown(page.content)
-          : jsonToHtml(page.content);
-      return { ...page, content: contentOutput, permissions };
+    if (createPageDto.format && createPageDto.format !== 'json') {
+      // insertPage returns base fields only — re-read with content so the
+      // format conversion (and caller-side write verification, e.g. the
+      // patty-kb-mcp length guard) works for creates, not just updates
+      const withContent = await this.pageRepo.findById(page.id, {
+        includeContent: true,
+      });
+      if (withContent?.content) {
+        const contentOutput =
+          createPageDto.format === 'markdown'
+            ? jsonToMarkdown(withContent.content)
+            : jsonToHtml(withContent.content);
+        return { ...page, content: contentOutput, permissions };
+      }
     }
 
     return { ...page, permissions };

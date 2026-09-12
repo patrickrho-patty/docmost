@@ -24,6 +24,7 @@ export type LightboxRequest = {
 const initialLightboxRequest: LightboxRequest = null;
 export const lightboxRequestAtom = atom(initialLightboxRequest);
 
-// Current page's edit mode — initialized from the user's saved preference on
-// first load, can be toggled locally without persisting to the server.
+// Current page's edit mode. The initial value is seeded from the workspace
+// "default page edit mode" setting once per session (see FullEditor); the
+// header toggle can then flip it locally without persisting anything.
 export const currentPageEditModeAtom = atom<PageEditMode>(PageEditMode.Edit);
