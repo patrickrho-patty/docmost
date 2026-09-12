@@ -62,7 +62,7 @@ export default function TopMenu() {
         <UnstyledButton>
           <Group gap={7} wrap={"nowrap"}>
             <CustomAvatar
-              avatarUrl={workspace?.logo}
+              avatarUrl={workspace?.logo || "/logos/patty_kb_symbol.png"}
               name={workspace?.name}
               variant="filled"
               size="sm"

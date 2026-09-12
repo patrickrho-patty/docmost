@@ -15,6 +15,7 @@ import { KyselyDB } from '@docmost/db/types/kysely.types';
 import { executeTx } from '@docmost/db/utils';
 import { InjectQueue } from '@nestjs/bullmq';
 import { QueueJob, QueueName } from '../../integrations/queue/constants';
+import { embedJobOptions } from '../../integrations/queue/embed-job.utils';
 import { Queue } from 'bullmq';
 import {
   extractMentions,
@@ -208,10 +209,15 @@ export class PersistenceExtension implements Extension {
         } as IPageMentionNotificationJob);
       }
 
-      await this.aiQueue.add(QueueJob.PAGE_CONTENT_UPDATED, {
-        pageIds: [pageId],
-        workspaceId: page.workspaceId,
-      });
+      await this.aiQueue.add(
+        QueueJob.PAGE_CONTENT_UPDATED,
+        {
+          pageIds: [pageId],
+          workspaceId: page.workspaceId,
+        },
+        // coalesce typing bursts with the PAGE_UPDATED listener enqueue
+        embedJobOptions([pageId]),
+      );
 
       await this.enqueuePageHistory(page);
     }

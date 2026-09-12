@@ -20,6 +20,25 @@
     align-items: center;
 }
 
+.brandLogoWrap {
+    display: flex;
+    align-items: center;
+    padding: rem(4px) rem(2px);
+}
+
+.brandLogo {
+    height: rem(26px);
+    width: auto;
+    object-fit: contain;
+    user-select: none;
+
+    /* the wordmark is near-black on transparent; invert for dark mode while
+       hue-rotate keeps the blue accent dot blue */
+    @mixin dark {
+        filter: invert(0.92) hue-rotate(180deg);
+    }
+}
+
 .link {
     display: block;
     line-height: 1;

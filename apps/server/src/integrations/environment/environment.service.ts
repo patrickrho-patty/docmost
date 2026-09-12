@@ -355,10 +355,9 @@ export class EnvironmentService {
   }
 
   getOllamaApiUrl(): string {
-    return this.configService.get<string>(
-      'OLLAMA_API_URL',
-      'http://localhost:11434',
-    );
+    // no default: undefined means "ollama not configured" and lets the
+    // embedding driver fall through to other providers
+    return this.configService.get<string>('OLLAMA_API_URL');
   }
 
   getEventStoreDriver(): string {

@@ -1,0 +1,13 @@
+# No auto-promotion anywhere: the KB is promoted manually (platform standard —
+# the single production stage is the human gate). Policy carries an explicit
+# stageSelector; a selector-less policy would match every stage.
+apiVersion: kargo.akuity.io/v1alpha1
+kind: ProjectConfig
+metadata:
+  name: patty-kb
+  namespace: patty-kb
+spec:
+  promotionPolicies:
+    - stageSelector:
+        name: production
+      autoPromotionEnabled: false

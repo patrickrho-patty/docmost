@@ -17,6 +17,7 @@ import {
   SearchSuggestionDTO,
 } from './dto/search.dto';
 import { AuthWorkspace } from '../../common/decorators/auth-workspace.decorator';
+import { getAiSettings } from '../../common/helpers';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { OAuthScope } from '../../common/decorators/oauth-scope.decorator';
 import { User, Workspace } from '@docmost/db/types/entity.types';
@@ -77,6 +78,7 @@ export class SearchController {
     return this.searchService.searchPage(searchDto, {
       userId: user.id,
       workspaceId: workspace.id,
+      aiSearchEnabled: getAiSettings(workspace).search === true,
     });
   }
 

@@ -1,6 +1,8 @@
 .env
 .env.dev
 .env.prod
+.env.confluence-migration
+.env.llm
 data
 # compiled output
 dist
@@ -41,3 +43,7 @@ lerna-debug.log*
 .nx
 .nx/installation
 .nx/cache
+migration/
+
+# pi agent session state
+.pi/

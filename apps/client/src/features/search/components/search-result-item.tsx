@@ -3,7 +3,6 @@ import {
   Group,
   Center,
   Text,
-  Badge,
   ActionIcon,
   Tooltip,
   getDefaultZIndex,
@@ -12,11 +11,14 @@ import { Spotlight } from "@mantine/spotlight";
 import { Link } from "react-router-dom";
 import { IconFile, IconDownload } from "@tabler/icons-react";
 import { buildPageUrl } from "@/features/page/page.utils";
-import { getPageIcon } from "@/lib";
 import {
   IAttachmentSearch,
   IPageSearch,
 } from "@/features/search/types/search.types";
+import {
+  HIGHLIGHT_SANITIZE_CONFIG,
+  PageSearchResultBody,
+} from "./page-search-result-body";
 import DOMPurify from "dompurify";
 import { useTranslation } from "react-i18next";
 import { timeAgo } from "@/lib/time.ts";
@@ -85,10 +87,10 @@ export function SearchResultItem({
                 opacity={0.6}
                 size="xs"
                 dangerouslySetInnerHTML={{
-                  __html: DOMPurify.sanitize(attachmentResult.highlight, {
-                    ALLOWED_TAGS: ["mark", "em", "strong", "b"],
-                    ALLOWED_ATTR: [],
-                  }),
+                  __html: DOMPurify.sanitize(
+                    attachmentResult.highlight,
+                    HIGHLIGHT_SANITIZE_CONFIG,
+                  ),
                 }}
               />
             )}
@@ -123,37 +125,7 @@ export function SearchResultItem({
         )}
         style={{ userSelect: "none" }}
       >
-        <Group wrap="nowrap" w="100%">
-          <Center>{getPageIcon(pageResult?.icon)}</Center>
-
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <Group justify="space-between" wrap="nowrap" gap="xs">
-              <Text truncate>{pageResult.title || t("Untitled")}</Text>
-              <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
-                {timeAgo(pageResult.updatedAt)}
-              </Text>
-            </Group>
-
-            {showSpace && pageResult.space && (
-              <Badge variant="light" size="xs" color="gray">
-                {pageResult.space.name}
-              </Badge>
-            )}
-
-            {pageResult?.highlight && (
-              <Text
-                opacity={0.6}
-                size="xs"
-                dangerouslySetInnerHTML={{
-                  __html: DOMPurify.sanitize(pageResult.highlight, {
-                    ALLOWED_TAGS: ["mark", "em", "strong", "b"],
-                    ALLOWED_ATTR: [],
-                  }),
-                }}
-              />
-            )}
-          </div>
-        </Group>
+        <PageSearchResultBody page={pageResult} showSpace={showSpace} showTime />
       </Spotlight.Action>
     );
   }

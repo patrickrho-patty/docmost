@@ -1,0 +1,8 @@
+[Unit]
+Description=Patty KB convergence (git fetch + docker compose pull/up when the deploy branch moved)
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/docmost-deploy-pull.sh

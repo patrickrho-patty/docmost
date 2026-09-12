@@ -45,11 +45,21 @@ export class AttachmentService {
     filePromise: Promise<MultipartFile>;
     pageId?: string;
     userId: string;
-    spaceId: string;
+    spaceId?: string;
     workspaceId: string;
     attachmentId?: string;
+    type?: AttachmentType;
+    aiChatId?: string;
   }) {
-    const { filePromise, pageId, spaceId, userId, workspaceId } = opts;
+    const {
+      filePromise,
+      pageId,
+      spaceId,
+      userId,
+      workspaceId,
+      type = AttachmentType.File,
+      aiChatId,
+    } = opts;
     const preparedFile: PreparedFile = await prepareFile(filePromise, {
       skipBuffer: true,
     });
@@ -82,7 +92,7 @@ export class AttachmentService {
       attachmentId = uuid7();
     }
 
-    const filePath = `${getAttachmentFolderPath(AttachmentType.File, workspaceId)}/${attachmentId}/${preparedFile.fileName}`;
+    const filePath = `${getAttachmentFolderPath(type, workspaceId)}/${attachmentId}/${preparedFile.fileName}`;
 
     const { stream, getBytesRead } = createByteCountingStream(
       preparedFile.multiPartFile.file,
@@ -108,16 +118,20 @@ export class AttachmentService {
           attachmentId,
           preparedFile,
           filePath,
-          type: AttachmentType.File,
+          type,
           userId,
           spaceId,
           workspaceId,
           pageId,
+          aiChatId,
         });
       }
 
-      // Only index PDF, DOCX and TXT files
-      if (['.pdf', '.docx', '.txt'].includes(attachment.fileExt.toLowerCase())) {
+      // Only index PDF, DOCX and TXT files (chat uploads are not indexed)
+      if (
+        type === AttachmentType.File &&
+        ['.pdf', '.docx', '.txt'].includes(attachment.fileExt.toLowerCase())
+      ) {
         await this.attachmentQueue.add(
           QueueJob.ATTACHMENT_INDEX_CONTENT,
           {
@@ -258,6 +272,7 @@ export class AttachmentService {
     workspaceId: string;
     pageId?: string;
     spaceId?: string;
+    aiChatId?: string;
     trx?: KyselyTransaction;
   }): Promise<Attachment> {
     const {
@@ -269,6 +284,7 @@ export class AttachmentService {
       workspaceId,
       pageId,
       spaceId,
+      aiChatId,
       trx,
     } = opts;
     return this.attachmentRepo.insertAttachment(
@@ -284,6 +300,7 @@ export class AttachmentService {
         workspaceId: workspaceId,
         pageId: pageId,
         spaceId: spaceId,
+        aiChatId: aiChatId,
       },
       trx,
     );

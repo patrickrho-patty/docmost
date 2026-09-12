@@ -1,0 +1,22 @@
+services:
+  db:
+    # pgvector image (drop-in for postgres:18) — required for AI semantic search (page_embeddings)
+    image: pgvector/pgvector:pg18
+    ports:
+      - "5433:5432"
+  redis:
+    ports:
+      - "6380:6379"
+  ollama:
+    # local embeddings (bge-m3, CPU) for AI semantic search development
+    image: ollama/ollama:latest
+    container_name: docmost-dev-ollama
+    environment:
+      OLLAMA_KEEP_ALIVE: "-1"
+    volumes:
+      - ollama_models:/root/.ollama
+    ports:
+      - "11435:11434"
+
+volumes:
+  ollama_models:

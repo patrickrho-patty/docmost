@@ -1,0 +1,14 @@
+# Discovers new docmost images as Freight.
+# sha- tags are not semver → NewestBuild + allowTagsRegexes (the required pair).
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Warehouse
+metadata:
+  name: patty-kb
+  namespace: patty-kb
+spec:
+  subscriptions:
+    - image:
+        repoURL: registry.patty.io/patty-kb/docmost
+        imageSelectionStrategy: NewestBuild
+        allowTagsRegexes:
+          - ^sha-

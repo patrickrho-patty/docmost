@@ -18,6 +18,7 @@ const ssoSchema = z.object({
   isEnabled: z.boolean(),
   allowSignup: z.boolean(),
   groupSync: z.boolean(),
+  allowedGroups: z.string(),
 });
 
 type SSOFormValues = z.infer<typeof ssoSchema>;
@@ -39,6 +40,7 @@ export function SsoOIDCForm({ provider, onClose }: SsoFormProps) {
       isEnabled: provider.isEnabled,
       allowSignup: provider.allowSignup,
       groupSync: provider.groupSync || false,
+      allowedGroups: (provider.settings?.allowedGroups || []).join(", "),
     },
     validate: zod4Resolver(ssoSchema),
   });
@@ -72,6 +74,12 @@ export function SsoOIDCForm({ provider, onClose }: SsoFormProps) {
     }
     if (form.isDirty("groupSync")) {
       ssoData.groupSync = values.groupSync;
+    }
+    if (form.isDirty("allowedGroups")) {
+      ssoData.allowedGroups = values.allowedGroups
+        .split(",")
+        .map((g) => g.trim())
+        .filter(Boolean);
     }
 
     await updateSsoProviderMutation.mutateAsync(ssoData);
@@ -114,6 +122,12 @@ export function SsoOIDCForm({ provider, onClose }: SsoFormProps) {
             description="Enter your OIDC Client Secret"
             placeholder="e.g OCSPX-zVCkotEPGRnJA1XKUrbgjlf7PQQ-"
             {...form.getInputProps("oidcClientSecret")}
+          />
+          <TextInput
+            label="Allowed groups"
+            description="Comma-separated IdP group names. Only members of these groups can sign in. Leave empty to allow all realm users."
+            placeholder="e.g kb-users"
+            {...form.getInputProps("allowedGroups")}
           />
 
           <Group justify="space-between">

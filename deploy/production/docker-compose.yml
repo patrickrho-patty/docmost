@@ -1,0 +1,77 @@
+# Patty KB — production compose (contabo-japan)
+#
+# The docmost service runs the PIPELINE-BUILT image from Harbor. The digest on
+# the `image:` line below is OWNED BY KARGO — written by the production Stage's
+# yaml-update step on every promotion. Never hand-edit it (one exception: the
+# initial bootstrap commit).
+#
+# The box converges automatically: a systemd timer pulls this repo and runs
+#   docker compose -f deploy/production/docker-compose.yml pull && up -d
+# only when a new commit landed. See deploy/README.md.
+#
+# env_file is ../../.env = /opt/docmost/.env (untracked, survives git resets).
+# Secrets (POSTGRES_PASSWORD, APP_SECRET, OPENAI_API_KEY, ...) stay there.
+#
+# AI stack (PAT-2329):
+#   - embeddings: ollama service below (bge-m3, CPU-only, network-internal)
+#   - completions: MiniMax OpenAI-compatible endpoint (OPENAI_API_URL in .env)
+services:
+  docmost:
+    # ⚠️ Kargo-owned line (yaml-update: services.docmost.image)
+    image: registry.patty.io/patty-kb/docmost@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    container_name: docmost
+    restart: unless-stopped
+    env_file: ../../.env
+    environment:
+      - NODE_ENV=production
+    volumes:
+      - docmost-data:/app/data/storage
+    networks:
+      - omniroute_default
+    depends_on:
+      - docmost-db
+      - docmost-redis
+      - ollama
+  docmost-db:
+    # pgvector build of postgres:18 — required for AI semantic search (page_embeddings)
+    image: pgvector/pgvector:pg18
+    container_name: docmost-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: docmost
+      POSTGRES_USER: docmost
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - docmost-db-data:/var/lib/postgresql
+    networks:
+      - omniroute_default
+  docmost-redis:
+    image: redis:8-alpine
+    container_name: docmost-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - docmost-redis-data:/data
+    networks:
+      - omniroute_default
+  ollama:
+    image: ollama/ollama:latest
+    container_name: docmost-ollama
+    restart: unless-stopped
+    environment:
+      # keep bge-m3 resident — cold load is ~11s, warm embed ~350ms
+      OLLAMA_KEEP_ALIVE: "-1"
+    volumes:
+      - ollama-models:/root/.ollama
+    networks:
+      - omniroute_default
+    # no published ports: reachable only inside the docker network as ollama:11434
+volumes:
+  docmost-data:
+  docmost-db-data:
+  docmost-redis-data:
+  ollama-models:
+networks:
+  omniroute_default:
+    external: true
+    name: omniroute_default

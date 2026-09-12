@@ -1,0 +1,5 @@
+# Kargo Project (cluster-scoped) for the Patty KB (docmost).
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Project
+metadata:
+  name: patty-kb

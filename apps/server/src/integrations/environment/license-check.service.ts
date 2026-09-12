@@ -73,7 +73,21 @@ export class LicenseCheckService {
       }
     }
 
-    return this.getFeatures(licenseKey);
+    const features = this.getFeatures(licenseKey);
+
+    // patty fork: unlock the SSO + Confluence import surfaces in the
+    // open-source build. The OIDC implementation lives in core/auth/sso
+    // (community port) and Confluence import is fully implemented in
+    // integrations/import — the client's feature gates just need to resolve
+    // to true when no EE licence is present.
+    if (features.length === 0 && !licenseKey) {
+      // PAT-2332: 'ai' unlocks semantic search / AI answers / AI chat
+      // surfaces. Generative-AI (/api/ai/generate) and MCP stay hidden
+      // client-side — no server implementation in this fork.
+      return ['security:settings', 'sso:custom', 'import:confluence', 'ai'];
+    }
+
+    return features;
   }
 
   resolveTier(licenseKey: string, plan: string): string {

@@ -98,6 +98,11 @@ export function AiSearchResult({
                 style={{ cursor: "pointer" }}
               >
                 <Group gap="xs">
+                  {source.citation != null && (
+                    <Text size="xs" fw={700} c="blue" style={{ flexShrink: 0 }}>
+                      [{source.citation}]
+                    </Text>
+                  )}
                   <IconFileText size={16} />
                   <Text size="sm" truncate>
                     {source.title}
