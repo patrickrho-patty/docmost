@@ -13,10 +13,11 @@ export type PageTranslationRow = Selectable<PageTranslation>;
 /**
  * PAT-2723: cached AI page translations + shared job rows.
  *
- * One row per (pageId, sourceHash) where sourceHash is sha256 of the exact
- * source-block HTML the client sent — any page edit changes the hash and
- * therefore misses the cache. `status` carries the shared job lifecycle
- * (in_progress while a job runs, complete when done); see ai-translate.service.
+ * One row per (pageId, sourceHash) where sourceHash is sha256 of the source
+ * blocks' normalized text, derived server-side (see ai-translate.service) —
+ * any text edit changes the hash and therefore misses the cache. `status`
+ * carries the shared job lifecycle (in_progress while a job runs, complete
+ * when done); see ai-translate.service.
  */
 @Injectable()
 export class PageTranslationRepo {

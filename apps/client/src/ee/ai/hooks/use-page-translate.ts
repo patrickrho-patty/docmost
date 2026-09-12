@@ -126,44 +126,62 @@ function findContentRoot(): HTMLElement | null {
   return roots[0] ?? null;
 }
 
-const COLLAB_ARTIFACTS =
-  ".collaboration-carets__caret, .collaboration-carets__selection, " +
-  ".ProseMirror-yjs-caret, .ProseMirror-yjs-selection";
+// Caret widgets are standalone decorations whose only text is the remote
+// user's name label — removed outright.
+const COLLAB_CARETS = ".collaboration-carets__caret, .ProseMirror-yjs-caret";
+// Remote SELECTIONS are inline decorations WRAPPING the selected user text
+// (y-prosemirror Decoration.inline) — they must be UNWRAPPED, never removed,
+// or the selected words would vanish from keys, payloads and the cache.
+const COLLAB_SELECTIONS =
+  ".collaboration-carets__selection, .ProseMirror-yjs-selection";
+const COLLAB_ARTIFACTS = `${COLLAB_CARETS}, ${COLLAB_SELECTIONS}`;
 
 /** The element to read block content from: the block itself, or — when
- *  collab carets/selections are present — a clone with them stripped.
- *  Caret labels carry remote user names as text and move as viewers click
- *  around, so they must never feed the version key, the language check, or
- *  the translation payload (they would also be baked into the cache). */
+ *  collab carets/selections are present — a clone with carets removed and
+ *  selection wrappers unwrapped. These decorations carry per-viewer state
+ *  (who is where) and move as viewers click around, so they must never feed
+ *  the version key or the translation payload (they would also be baked
+ *  into the cache). */
 function contentElement(el: HTMLElement): HTMLElement {
   if (!el.querySelector(COLLAB_ARTIFACTS)) return el;
   const clone = el.cloneNode(true) as HTMLElement;
-  clone.querySelectorAll(COLLAB_ARTIFACTS).forEach((n) => n.remove());
+  clone.querySelectorAll(COLLAB_CARETS).forEach((n) => n.remove());
+  clone
+    .querySelectorAll(COLLAB_SELECTIONS)
+    .forEach((n) => n.replaceWith(...n.childNodes));
   return clone;
 }
 
-/** Clean block HTML for the translation payload (collab artifacts out). */
-function blockHtml(el: HTMLElement): string {
-  return contentElement(el).innerHTML;
-}
-
-/** Top-level blocks worth translating, with their clean text. Skips code
- *  blocks, image-only rows, embeds, transclusions and empty spacing nodes. */
-function collectBlocks(root: HTMLElement): { el: HTMLElement; text: string }[] {
-  const out: { el: HTMLElement; text: string }[] = [];
+/** Top-level blocks worth translating, each with its cleaned text and the
+ *  element the text came from (contentEl is a clone only when collab
+ *  artifacts were present). Skips code blocks, image-only rows, embeds,
+ *  transclusions and empty spacing nodes. */
+function collectBlocks(
+  root: HTMLElement,
+): { el: HTMLElement; text: string; contentEl: HTMLElement }[] {
+  const out: { el: HTMLElement; text: string; contentEl: HTMLElement }[] = [];
+  // one page-global probe instead of a per-block search — the common case
+  // (static reader, or live editor with no remote carets) has no artifacts
+  const hasArtifacts = !!root.querySelector(COLLAB_ARTIFACTS);
   const children = Array.from(root.children) as HTMLElement[];
   for (const el of children) {
     const tag = el.tagName;
     if (tag === "PRE") continue;
     if (tag === "IMG" || tag === "HR" || tag === "TABLE") continue;
-    // transcluded (synced) content is owned by its source page and renders
-    // asynchronously, per-viewer permissions — no stable page version can
-    // include it; translate the source page instead
-    if (el.matches('[data-type="transclusionReference"]')) continue;
+    // transclusion node views (references AND sources): reference content is
+    // async and permission-dependent, and both render React-owned DOM that a
+    // translation swap must never stomp — translate the source page instead
+    if (
+      el.classList.contains("node-transclusionReference") ||
+      el.classList.contains("node-transclusionSource")
+    ) {
+      continue;
+    }
     if (el.querySelector("pre")) continue;
-    const text = (contentElement(el).textContent ?? "").trim();
+    const contentEl = hasArtifacts ? contentElement(el) : el;
+    const text = (contentEl.textContent ?? "").trim();
     if (text.length < 2) continue;
-    out.push({ el, text });
+    out.push({ el, text, contentEl });
   }
   return out;
 }
@@ -204,7 +222,9 @@ export function usePageTranslate(pageId: string | undefined) {
   const streamOpenRef = useRef(false);
   const originalsRef = useRef(new Map<HTMLElement, string>());
   const receivedRef = useRef(new Map<number, string>());
-  const blocksRef = useRef<{ id: number; el: HTMLElement }[]>([]);
+  const blocksRef = useRef<
+    { id: number; el: HTMLElement; contentEl: HTMLElement }[]
+  >([]);
 
   const setPhaseAll = useCallback((p: TranslatePhase) => {
     phaseRef.current = p;
@@ -368,11 +388,17 @@ export function usePageTranslate(pageId: string | undefined) {
       if (blocks.length === 0) return;
 
       // originals are the RAW innerHTML: restore must hand the live DOM
-      // back exactly what it had, collab caret decorations included
+      // back exactly what it had, collab caret decorations included (a
+      // caret that has since left may briefly reappear — ProseMirror
+      // reconciles its decorations on the next view update)
       originalsRef.current = new Map(
         blocks.map((b) => [b.el, b.el.innerHTML]),
       );
-      blocksRef.current = blocks.map((b, i) => ({ id: i, el: b.el }));
+      blocksRef.current = blocks.map((b, i) => ({
+        id: i,
+        el: b.el,
+        contentEl: b.contentEl,
+      }));
       applyView(); // dim pending blocks, show what arrives
       setProgress({ done: 0, total: blocks.length });
       setPhaseAll("busy");
@@ -381,7 +407,7 @@ export function usePageTranslate(pageId: string | undefined) {
       // CLEAN html — collab artifacts must not reach the model or the cache
       const payload = blocksRef.current.map((b) => ({
         id: b.id,
-        html: blockHtml(b.el),
+        html: b.contentEl.innerHTML,
       }));
 
       const abort = new AbortController();
