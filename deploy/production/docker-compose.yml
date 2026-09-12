@@ -20,7 +20,7 @@ name: docmost   # project pin — adopts the existing docmost_* containers/volum
 services:
   docmost:
     # ⚠️ Kargo-owned line (yaml-update: services.docmost.image)
-    image: registry.patty.io/patty-kb/docmost@sha256:1bd902a6a148ae191b5d99647dce397ee2f37097bef53232114e9d53d22bde9c
+    image: registry.patty.io/patty-kb/docmost@sha256:f6b2652f5bdf31ff21dd703451ce4281abef45a2e341269dce6a669ebdf98115
     container_name: docmost
     restart: unless-stopped
     env_file: ../../.env
