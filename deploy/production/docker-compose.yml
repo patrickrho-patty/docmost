@@ -18,7 +18,7 @@
 services:
   docmost:
     # ⚠️ Kargo-owned line (yaml-update: services.docmost.image)
-    image: registry.patty.io/patty-kb/docmost@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    image: registry.patty.io/patty-kb/docmost@sha256:af705ddfa970ef08d1da5709f1383c83c91107306c21f9283dd1084bfb8b3abe
     container_name: docmost
     restart: unless-stopped
     env_file: ../../.env
