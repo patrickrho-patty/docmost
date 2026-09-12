@@ -17,6 +17,13 @@
  *    pending blocks are dimmed until their translation lands
  *  - entering edit mode restores the originals immediately (translated DOM
  *    must never reach the collaborative editor)
+ *
+ * The shared job/cache key ("page version") is a hash of the blocks'
+ * NORMALIZED TEXT, not their HTML: every viewer must derive the same key
+ * from the same synced document, and HTML serialization is browser- and
+ * renderer-dependent (static preview vs live collab editor, style/entity
+ * encoding) while text content is not. A text edit changes the key and
+ * therefore misses the cache; a formatting-only edit keeps it.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import DOMPurify from "dompurify";
@@ -43,18 +50,26 @@ interface StatusResponse {
 const POLL_INTERVAL_MS = 4000;
 
 /**
- * sha256 of the block payload, byte-identical to the server's
- * `createHash('sha256').update(JSON.stringify(blocks))` — the `{id, html}`
- * key order must stay in sync with both sides.
+ * sha256 of the block version payload: `[{id, text}]` where text is the
+ * block's normalized text content. Every viewer derives the identical key
+ * from the same document (textContent is spec-stable across browsers, unlike
+ * innerHTML), so a job started by one person is found by everyone else.
+ * The server trusts this value as a cache key only — it is never executed.
  */
 async function computeSourceHash(
-  blocks: { id: number; html: string }[],
+  blocks: { id: number; text: string }[],
 ): Promise<string> {
   const data = new TextEncoder().encode(JSON.stringify(blocks));
   const digest = await crypto.subtle.digest("SHA-256", data);
   return [...new Uint8Array(digest)]
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
+}
+
+/** Collapse whitespace and unify nbsp so extraction differences between
+ *  renderers can never change the version key. */
+function normalizeBlockText(text: string): string {
+  return text.replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
 }
 
 const HANGUL = /[가-힯ᄀ-ᅟᅠ-ᆯ]/g;
@@ -80,8 +95,16 @@ export function isMostlyKorean(text: string): boolean {
 }
 
 function findContentRoot(): HTMLElement | null {
-  // The title editor and empty comment editors are also .ProseMirror roots;
-  // the page body is the non-title root with the most text.
+  // The page body is the .ProseMirror inside .editor-container — stable
+  // across the static preview and the live collab editor (page-editor.tsx
+  // wraps both). Picking deterministically matters: every viewer must
+  // collect the same blocks to derive the same version key.
+  const body = document.querySelector<HTMLElement>(
+    ".editor-container .ProseMirror",
+  );
+  if (body) return body;
+  // Fallback for layouts without the marker: the non-title root with the
+  // most text (title and empty comment editors are also .ProseMirror roots).
   const roots = Array.from(
     document.querySelectorAll<HTMLElement>(".ProseMirror"),
   ).filter(
@@ -326,6 +349,15 @@ export function usePageTranslate(pageId: string | undefined) {
         html: originalsRef.current.get(b.el) ?? "",
       }));
 
+      // the shared job/cache key: normalized text of the exact blocks we
+      // are about to send — identical for every viewer of this page version
+      const sourceHash = await computeSourceHash(
+        blocksRef.current.map((b) => ({
+          id: b.id,
+          text: normalizeBlockText(b.el.textContent ?? ""),
+        })),
+      );
+
       const abort = new AbortController();
       abortRef.current = abort;
       streamOpenRef.current = true;
@@ -337,7 +369,7 @@ export function usePageTranslate(pageId: string | undefined) {
         cached?: boolean;
       }>({
         url: "/api/ai/translate",
-        body: { pageId: pid, blocks: payload, force },
+        body: { pageId: pid, blocks: payload, force, sourceHash },
         signal: abort.signal,
         onFrame: (frame) => {
           if (frame.cached) {
@@ -446,7 +478,10 @@ export function usePageTranslate(pageId: string | undefined) {
         // send only the digest: the poller fires every few seconds per
         // viewer and the full page HTML can be ~200KB
         const sourceHash = await computeSourceHash(
-          blocks.map((b, i) => ({ id: i, html: b.html })),
+          blocks.map((b, i) => ({
+            id: i,
+            text: normalizeBlockText(b.el.textContent ?? ""),
+          })),
         );
         if (cancelled || streamOpenRef.current || viewingRef.current) return;
         // the axios client carries auth + unwraps the API envelope

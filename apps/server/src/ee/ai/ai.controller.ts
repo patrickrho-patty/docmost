@@ -19,6 +19,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
 } from 'class-validator';
 import { AuthUser } from '../../common/decorators/auth-user.decorator';
 import { AuthWorkspace } from '../../common/decorators/auth-workspace.decorator';
@@ -46,6 +47,17 @@ export class AiTranslateDto {
 
   @IsArray()
   blocks: TranslateBlock[];
+
+  /**
+   * Client-computed version key: sha256 (hex) of the blocks' normalized
+   * text. Every viewer derives the identical key from the same document
+   * (HTML serialization would be browser-dependent; text is not), so jobs
+   * and cache entries are shared across users. See use-page-translate.ts.
+   */
+  @IsNotEmpty()
+  @IsString()
+  @Matches(/^[0-9a-f]{64}$/)
+  sourceHash: string;
 
   @IsOptional()
   @IsBoolean()
@@ -153,6 +165,7 @@ export class AiController {
       await this.aiTranslateService.streamPageTranslation({
         pageId: dto.pageId,
         blocks: dto.blocks ?? [],
+        sourceHash: dto.sourceHash,
         userId: user.id,
         force: dto.force === true,
         write: (obj) => sse.emit(obj),

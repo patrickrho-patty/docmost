@@ -163,7 +163,9 @@ export default function PageEditor({
           </HocuspocusRoom>
         </HocuspocusProviderWebsocketComponent>
       ) : (
-        <StaticPageEditor content={content} ariaLabel={t("Page content")} />
+        <div className="editor-container">
+          <StaticPageEditor content={content} ariaLabel={t("Page content")} />
+        </div>
       )}
     </TransclusionLookupProvider>
   );
@@ -460,7 +462,11 @@ function CollabPageEditor({
   }, [yjsConnectionStatus, isSynced]);
 
   if (showStatic) {
-    return <StaticPageEditor content={content} ariaLabel={t("Page content")} />;
+    return (
+      <div className="editor-container">
+        <StaticPageEditor content={content} ariaLabel={t("Page content")} />
+      </div>
+    );
   }
 
   return (
