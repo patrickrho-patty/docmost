@@ -49,3 +49,68 @@ AI_COMPLETION_MODEL=MiniMax-M3
 1. Commit + push on `custom`
 2. `rsync -a --delete --exclude .env --exclude node_modules --exclude 'apps/*/dist' ./ root@contabo-japan:/opt/docmost/`
 3. On the box: `cd /opt/docmost && docker compose -f docker-compose.prod.yml up -d --build docmost`
+
+## Hosted MCP (`patty-kb-mcp`)
+
+`https://mcp.kb.patty.io/mcp` — the same tool surface as the stdio server, for harnesses
+that cannot install it locally. Clients send `Authorization: Bearer <Keycloak access token>`
+(realm `internal`, scope `mcp:tools`, audience `https://mcp.kb.patty.io`); the server
+exchanges that token for a per-user Docmost session at `/api/sso/oidc/exchange`, so the
+group allowlist and every page permission stay exactly as they are in Docmost.
+
+| | |
+| --- | --- |
+| Source | `patty-io/patty-kb-mcp` → CI-built Harbor image (`patty-kb-mcp-image.yml` on GARM) |
+| Compose service | `patty-kb-mcp` in `deploy/production/docker-compose.yml` (digest owned by the Kargo `patty-kb` stage; see Deploy) |
+| Container name | **`patty-kb-mcp`** — it is Caddy's upstream (`patty-kb-mcp:8080`); renaming it 502s the vhost |
+| Network / port | `omniroute_default`, internal `8080` (no published ports) |
+| Replicas | **one, by design** — the session cache and rate limits are in-process; scaling out needs Redis first |
+| Logs | one JSON line per request on stderr (`sub`, method, status, ms). Tokens are never logged |
+
+Environment (all optional except the first three):
+
+```
+PATTY_KB_URL=https://kb.patty.io
+PATTY_KB_RESOURCE_URL=https://mcp.kb.patty.io     # token audience + PRM resource
+PATTY_KB_ISSUER=https://login.patty.io/realms/internal
+PATTY_KB_ALLOWED_HOSTS=mcp.kb.patty.io            # host-header allowlist (default: resource URL host)
+# PATTY_KB_HTTP_PORT=8080  PATTY_KB_SESSION_TTL_SECONDS=3600  PATTY_KB_RATE_LIMIT_PER_MINUTE=60
+# PATTY_KB_MAX_CONCURRENT=4  PATTY_KB_REQUEST_LIMIT_BYTES=10485760  PATTY_KB_RESULT_LIMIT_BYTES=5242880
+# PATTY_KB_REQUIRED_SCOPE=mcp:tools  PATTY_KB_AUDIENCE=<override>  PATTY_KB_ISSUERS_JWKS=<override>
+```
+
+### Deploy
+
+The digest in `deploy/production/docker-compose.yml` is the deploy version. Bump
+it (or let a Kargo promotion of `patty-kb-mcp` bump it), commit on
+`patty-io/patty-kb:main` — the box's `kb-deploy-pull` timer converges within
+~2 minutes (`git fetch` → `reset --hard` → `compose pull && up -d`).
+
+### Verify
+
+```sh
+curl -s https://mcp.kb.patty.io/healthz                                  # {"status":"ok","version":"1.0.0"}
+curl -s https://mcp.kb.patty.io/.well-known/oauth-protected-resource     # resource + authorization_servers
+curl -si -X POST https://mcp.kb.patty.io/mcp -H 'content-type: application/json' -d '{}' | head -4
+#   → 401 with  www-authenticate: Bearer error="invalid_token", resource_metadata=…
+```
+
+With a real user token (device flow, client `patty-code-mcp`), a `tools/list` returns 41
+tools. A **client-credentials** token — e.g. `patty-accounts-bootstrap-admin` — passes the
+bearer gate but fails the exchange with a clean `HTTP 401 Invalid or expired identity
+token`, because a service account has no userinfo; that is expected, not a fault.
+
+Keycloak side (scope, audience mapper, device client) is codified in `patty-io/keycloak`:
+`realm/realm-internal.json`, applied idempotently by `scripts/apply-internal-mcp.sh` and
+checked by `scripts/verify-realm-internal.sh` (`PASS mcp:tools + patty-code-mcp`).
+
+### Rollback
+
+Change the `patty-kb-mcp` digest back to the known-good one in
+`deploy/production/docker-compose.yml` and commit — the box converges within
+~2 minutes. Stdio users are unaffected, and the Docmost side needs no change
+(the exchange endpoint is shared with the stdio flow).
+
+> ⚠️ If the `caddy` container on this host is ever recreated, restart the Proxy Manager
+> afterwards — its routes live in the CPM database and are pushed to Caddy over the admin
+> API. Without that restart the vhost serves nothing.

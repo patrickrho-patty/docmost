@@ -1,7 +1,7 @@
 # Patty KB — production compose (contabo-japan)
 #
-# The docmost service runs the PIPELINE-BUILT image from Harbor. The digest on
-# the `image:` line below is OWNED BY KARGO — written by the production Stage's
+# The docmost and patty-kb-mcp services run PIPELINE-BUILT images from Harbor.
+# The digests on the `image:` lines below are OWNED BY KARGO — written by the production Stage's
 # yaml-update step on every promotion. Never hand-edit it (one exception: the
 # initial bootstrap commit).
 #
@@ -68,6 +68,24 @@ services:
     networks:
       - omniroute_default
     # no published ports: reachable only inside the docker network as ollama:11434
+  patty-kb-mcp:
+    # ⚠️ Kargo-owned line (yaml-update: services.patty-kb-mcp.image)
+    # Built by .github/workflows/patty-kb-mcp-image.yml on GARM and pushed to
+    # Harbor; the digest below is the only place a deploy version is declared,
+    # so rollback is changing it. Never hand-edit it (one exception: the
+    # initial bootstrap commit).
+    image: registry.patty.io/patty-kb/patty-kb-mcp@sha256:ed0c1b372dd510fb0c391dc8994ff24ae2baf5403d3eb3ec19f4767da8ae58c5
+    # The container name is Caddy's upstream (patty-kb-mcp:8080) — do not change.
+    container_name: patty-kb-mcp
+    restart: unless-stopped
+    environment:
+      - PATTY_KB_URL=https://kb.patty.io
+      - PATTY_KB_RESOURCE_URL=https://mcp.kb.patty.io
+      - PATTY_KB_ISSUER=https://login.patty.io/realms/internal
+      - PATTY_KB_ALLOWED_HOSTS=mcp.kb.patty.io
+    networks:
+      - omniroute_default
+    # no published ports: reachable only inside the docker network as patty-kb-mcp:8080
 volumes:
   docmost-data:
   docmost-db-data:
